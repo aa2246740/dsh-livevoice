@@ -1,0 +1,5 @@
+id: dsh-livevoice
+entry: src/dsh-livevoice.ts
+marker: "[my-plugins/dsh-livevoice] loaded"
+kind: client
+profile: web

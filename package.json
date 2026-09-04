@@ -1,0 +1,87 @@
+{
+  "name": "dsh-livevoice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Codex realtime live voice for DeepSeek Harness: WebRTC + Frameless Bidi + session delegation.",
+  "type": "module",
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./lib/types/dsh-livevoice.d.ts",
+      "import": "./lib/dsh-livevoice.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "import": "./lib/client.js",
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "entry": "./lib/client.js",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsdown",
+    "test": "vitest run",
+    "check": "pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "undici": "^7.16.0",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-commands": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.8",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-commands": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-credentials": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-host-webserver": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-llm": "0.1.0-rc.8",
+    "@deepseek-ai/dsh-session": "0.1.0-rc.8",
+    "@deepseek-ai/schemastery": "3.18.1",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "@types/ws": "^8.18.1",
+    "react": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  }
+}

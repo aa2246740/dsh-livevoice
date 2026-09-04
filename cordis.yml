@@ -1,0 +1,5 @@
+# Portable workshop overlay. `dshx overlay` / `verify` rewrite `name` to an
+# absolute path. Official installs use the package name in the watched patch.
+- insert:
+    - id: dsh-livevoice
+      name: './src/dsh-livevoice.ts'
