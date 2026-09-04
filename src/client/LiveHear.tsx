@@ -1,4 +1,4 @@
-import type { CommandRowProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { CommandRowProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import css from './LivePanel.module.css'
 
 export function LiveHear(props: CommandRowProps) {

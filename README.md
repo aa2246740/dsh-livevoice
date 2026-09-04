@@ -4,6 +4,15 @@ Codex realtime voice (`Ctrl+L` / `/live`) for [DeepSeek Harness](https://github.
 
 This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC media, Frameless Bidi sideband, client-side delegation into the current DSH session. It is not a local STT/TTS plugin.
 
+## Compatibility and build
+
+The current source targets DeepSeek Harness `dsh-v0.1.2-rc.1`. Build the browser half against the intended Harness checkout so dshx uses that target's public client platform table:
+
+```sh
+pnpm install --frozen-lockfile
+DSHX_HARNESS=/absolute/path/to/deepseek-harness pnpm build
+```
+
 ## Auth: OAuth is required
 
 Live voice **cannot** use a normal OpenAI platform API key or the default DeepSeek LLM login. Signaling posts to `https://chatgpt.com/backend-api/codex/realtime/calls` with a ChatGPT / Codex OAuth access token and a `Codex Desktop` originator.

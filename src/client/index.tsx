@@ -1,6 +1,9 @@
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { LIVE_HEAR_COMMAND, LIVE_SAY_COMMAND } from '../ids.js'
 import { LiveChip, LiveDock } from './LiveChip.js'
@@ -22,7 +25,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-function sessionOf(sessionId: SessionId | string): LiveClientSession {
+function sessionOf(sessionId: string): LiveClientSession {
   const id = String(sessionId)
   const existing = sessions.get(id)
   if (existing) return existing

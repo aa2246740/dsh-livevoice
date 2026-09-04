@@ -299,7 +299,7 @@ class LiveCallSession {
     this.applyJob({ type: 'created', liveId: event.item.id, messageId: message.id })
     this.emitPhase('working')
     const steer = liveWorkRoute(this.agent.status) === 'steer'
-      && openTurnNumber(this.agent.session.events) !== undefined
+      && openTurnNumber(this.agent.session.snapshotEvents()) !== undefined
     try {
       if (steer) this.agent.steer(message)
       else this.agent.followup(message)
@@ -342,7 +342,7 @@ class LiveCallSession {
   }
 
   private appendFinalResponse(turn: number, liveIds: readonly string[]): void {
-    const text = lastAssistantTextForTurn(this.agent.session.events, turn).trim()
+    const text = lastAssistantTextForTurn(this.agent.session.snapshotEvents(), turn).trim()
     if (text) this.fanout(liveIds, renderAgentFinalMessage(text))
     this.emitPhase('listening')
   }

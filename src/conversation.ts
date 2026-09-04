@@ -3,10 +3,7 @@ import type {} from '@deepseek-ai/dsh-commands/types'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { LIVE_HEAR_COMMAND, LIVE_SAY_COMMAND } from './ids.js'
 
-export interface TranscriptSession {
-  readonly events: readonly SessionEvent[]
-  append: Session['append']
-}
+export type TranscriptSession = Pick<Session, 'append' | 'snapshotEvents'>
 
 export function compactLiveText(text: string): string {
   return text.replaceAll(/\s+/g, '')
@@ -20,7 +17,7 @@ export function presentFinalTranscript(
   if (!text) return true
   const name = input.role === 'user' ? LIVE_HEAR_COMMAND : LIVE_SAY_COMMAND
   if (input.role === 'assistant' && input.backendWorking === true) return true
-  if (isDuplicateLiveCommand(session.events, name, text)) return true
+  if (isDuplicateLiveCommand(session.snapshotEvents(), name, text)) return true
   appendLiveCommand({ session, name, text })
   return true
 }

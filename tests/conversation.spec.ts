@@ -9,7 +9,7 @@ function sessionLog(seed: SessionEvent[] = []): TranscriptSession & { readonly l
   const log = [...seed]
   return {
     log,
-    get events() {
+    snapshotEvents() {
       return log
     },
     append(type, data, ...opts) {
