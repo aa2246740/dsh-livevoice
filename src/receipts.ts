@@ -97,6 +97,7 @@ export class LiveTaskReceiptLog {
   }
 
   ended(input: {
+    id?: string
     turn: number
     status: Extract<LiveTaskStatus, 'replied' | 'no-reply' | 'cancelled' | 'blocked' | 'interrupted' | 'max-tokens' | 'failed'>
     error?: string
@@ -105,6 +106,7 @@ export class LiveTaskReceiptLog {
     const changed: LiveTaskReceipt[] = []
     for (const { receipt } of this.records.values()) {
       if (receipt.status !== 'running' || receipt.claimedTurn !== input.turn) continue
+      if (input.id !== undefined && receipt.id !== input.id) continue
       const next = this.update(receipt.id, {
         status: input.status,
         ...input.error === undefined ? {} : { error: input.error },

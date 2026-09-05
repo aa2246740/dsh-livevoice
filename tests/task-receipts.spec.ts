@@ -124,7 +124,7 @@ describe('delegation task receipt walking skeleton', () => {
         receipt: expect.objectContaining({ id: 'delegation-1', status: 'running', claimedTurn: 7 }),
       })
 
-      fixture.events.push({
+      fixture.emit('session/event', fixture.session, {
         type: 'assistant/message',
         seq: 1,
         time: 1,

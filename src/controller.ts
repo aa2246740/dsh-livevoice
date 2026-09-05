@@ -3,10 +3,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { CodexAccess } from './auth.js'
 import { presentFinalTranscript } from './conversation.js'
-import {
-  applyDelegationInput,
-  type DelegationJob,
-} from './delegation.js'
+import { LiveDelegations } from './live-delegations.js'
 import { briefLiveDelegation, renderWorkerHandoff, type TranscriptLine } from './handoff.js'
 import { PLUGIN_ID } from './ids.js'
 import { livePhaseForSpeech, liveWorkRoute, openTurnNumber } from './work.js'
@@ -15,6 +12,7 @@ import {
   buildDelegationContextAppend,
   chunkLiveContext,
   type LiveClientMessage,
+  type LiveContextChannel,
   type LivePhase,
   type LiveServerEvent,
 } from './protocol.js'
@@ -29,7 +27,7 @@ export type { LiveTranscript }
 import { renderAgentFinalMessage, renderLiveInstructions } from './prompts.js'
 import { LiveSideband } from './sideband.js'
 import { signalLiveCall } from './signaling.js'
-import { hasToolCalls, lastAssistantTextForTurn, textFromBlocks } from './text.js'
+import { hasToolCalls, textFromBlocks } from './text.js'
 import { resolveLiveVoice } from './voices.js'
 import { LiveTaskReceiptLog, type LiveTaskReceipt } from './receipts.js'
 
@@ -178,9 +176,10 @@ class LiveCallSession {
   private sideband: LiveSideband | undefined
   private sendChain: Promise<void> = Promise.resolve()
   private closed = false
+  private closing = false
   private ready = false
   private phase: LivePhase = 'connecting'
-  private job: DelegationJob | undefined
+  private readonly delegations = new LiveDelegations()
   private transcripts: TranscriptState = emptyTranscriptState()
   private lastTranscript: LiveTranscript | undefined
   private spoken: TranscriptLine[] = []
@@ -225,13 +224,15 @@ class LiveCallSession {
         this.handleSessionEvent(event)
       }),
       this.agent.ctx.on('agent/inbox/claimed', ({ message, turn }) => {
-        this.applyJob({ type: 'claimed', messageId: message.id, turn })
+        if (this.closed || this.closing) return
+        this.delegations.claim(message.id, turn)
         this.emitReceipt(this.receiptLog.claimed(String(message.id), turn))
       }),
       this.agent.ctx.on('agent/inbox/discarded', ({ message }) => {
-        this.applyJob({ type: 'discarded', messageId: message.id })
+        if (this.closed || this.closing) return
+        this.delegations.discard(message.id)
         this.emitReceipt(this.receiptLog.discarded(String(message.id)))
-        if (this.job === undefined && this.phase === 'working') this.emitPhase('listening')
+        if (!this.delegations.active && this.phase === 'working') this.emitPhase('listening')
       }),
     ]
     this.offAgent = () => {
@@ -259,12 +260,13 @@ class LiveCallSession {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return
-    this.closed = true
+    if (this.closed || this.closing) return
+    this.closing = true
     for (const receipt of this.receiptLog.stopTracking()) this.emitReceipt(receipt)
-    this.abort.abort()
     this.offAgent()
     await this.sendChain
+    this.closed = true
+    this.abort.abort()
     const sideband = this.sideband
     this.sideband = undefined
     await sideband?.close()
@@ -273,7 +275,7 @@ class LiveCallSession {
   }
 
   private handleLiveEvent(event: LiveServerEvent): void {
-    if (this.closed) return
+    if (this.closed || this.closing) return
     switch (event.type) {
       case 'session.started':
       case 'session.updated':
@@ -340,52 +342,55 @@ class LiveCallSession {
       taskInput: input,
       handoff,
       context,
-      requestKind: this.job === undefined ? 'new' : 'additional',
+      requestKind: this.delegations.active ? 'additional' : 'new',
       route,
     })
-    this.applyJob({ type: 'created', liveId: event.item.id, messageId: message.id })
+    this.delegations.create(event.item.id, message.id)
     this.emitReceipt(receipt)
     try {
       if (route === 'steer') this.agent.steer(message)
       else this.agent.followup(message)
-      if (this.job !== undefined) this.emitPhase('working')
+      if (this.delegations.active) this.emitPhase('working')
     } catch (error) {
       const messageText = error instanceof Error ? error.message : String(error)
-      this.applyJob({ type: 'discarded', messageId: message.id })
+      this.delegations.discard(message.id)
       this.emitReceipt(this.receiptLog.failed(receipt.id, messageText))
       this.fail(messageText)
     }
   }
 
   private handleSessionEvent(event: SessionEvent): void {
-    if (this.closed || this.job === undefined) return
+    if (this.closed || this.closing || !this.delegations.active) return
     if (event.type === 'assistant/message') {
-      if (this.job.claimedTurn !== event.data.turn) return
+      const text = textFromBlocks(event.data.message.content)
       if (hasToolCalls(event.data.message.content)) {
-        this.fanout(this.job.liveIds, textFromBlocks(event.data.message.content), 'commentary')
+        this.fanout(this.delegations.commentaryAudience(event.data.turn), text, 'commentary')
+      } else {
+        this.delegations.reply(event.data.turn, event.seq, text)
       }
       return
     }
     if (event.type === 'turn/end') {
-      const finalText = lastAssistantTextForTurn(this.agent.session.snapshotEvents(), event.data.turn).trim()
-      const outcome = taskReceiptOutcome(event.data.reason, finalText)
-      for (const receipt of this.receiptLog.ended({ turn: event.data.turn, ...outcome })) {
-        this.emitReceipt(receipt)
+      const results = this.delegations.end(event.data.turn)
+      const receipts = results.flatMap(result => this.receiptLog.ended({
+        id: result.liveId,
+        turn: event.data.turn,
+        ...taskReceiptOutcome(event.data.reason, result.text),
+      }))
+      for (const receipt of receipts) this.emitReceipt(receipt)
+      for (const result of results) {
+        if (result.text) {
+          const text = event.data.reason.kind === 'completed'
+            ? renderAgentFinalMessage(result.text)
+            : `Partial worker response; turn ended ${event.data.reason.kind}, not successfully completed.\n\n${result.text}`
+          this.fanout([result.liveId], text)
+        }
       }
-      const applied = this.applyJob({ type: 'turn-end', turn: event.data.turn })
-      if (applied.finalizeTurn !== undefined && applied.finalizeLiveIds !== undefined) {
-        this.appendFinalResponse(event.data.reason.kind === 'completed' ? finalText : '', applied.finalizeLiveIds)
-      }
+      if (results.length && !this.delegations.active) this.emitPhase('listening')
     }
   }
 
-  private applyJob(input: Parameters<typeof applyDelegationInput>[1]): ReturnType<typeof applyDelegationInput> {
-    const applied = applyDelegationInput(this.job, input)
-    this.job = applied.job
-    return applied
-  }
-
-  private fanout(liveIds: readonly string[], text: string, channel?: 'commentary'): void {
+  private fanout(liveIds: readonly string[], text: string, channel: LiveContextChannel = 'speakable'): void {
     const trimmed = text.trim()
     if (!trimmed || liveIds.length === 0) return
     for (const liveId of liveIds) {
@@ -393,11 +398,6 @@ class LiveCallSession {
         this.queueSend(buildDelegationContextAppend(liveId, chunk, channel))
       }
     }
-  }
-
-  private appendFinalResponse(text: string, liveIds: readonly string[]): void {
-    if (text) this.fanout(liveIds, renderAgentFinalMessage(text))
-    this.emitPhase('listening')
   }
 
   private applyTranscript(event: LiveServerEvent): void {
@@ -414,7 +414,7 @@ class LiveCallSession {
         this.lastTranscript = update.emit
         this.emit({ type: 'transcript', transcript: update.emit })
         const phase = livePhaseForSpeech({
-          backendWorking: this.job !== undefined,
+          backendWorking: this.delegations.active,
           role: update.emit.role,
           final: update.emit.final,
         })
@@ -426,7 +426,7 @@ class LiveCallSession {
         presentFinalTranscript(this.agent.session, {
           role: update.present.role,
           text: update.present.text,
-          backendWorking: this.job !== undefined,
+          backendWorking: this.delegations.active,
         })
       } catch {
         // Conversation present must not take down the live call.
@@ -451,7 +451,20 @@ class LiveCallSession {
   }
 
   private emitReceipt(receipt: LiveTaskReceipt | undefined): void {
-    if (receipt) this.emit({ type: 'task-receipt', receipt })
+    if (!receipt) return
+    this.emit({ type: 'task-receipt', receipt })
+    const active = this.receiptLog.snapshot().filter(item => item.status === 'queued' || item.status === 'running')
+    const status = `Worker task status: ${JSON.stringify({
+      id: receipt.id, status: receipt.status,
+      active: active.map(item => ({ id: item.id, status: item.status })),
+      ...receipt.error ? { error: receipt.error } : {},
+    })}. ${receipt.status === 'tracking-stopped'
+      ? 'Call tracking stopped; DSH work may continue. Follow the DSH session; do not claim it was cancelled or completed.'
+      : active.length === 0
+        ? 'No tracked worker requests remain active. Do not promise a later result or say work is still running.'
+        : 'Only the listed active requests are still pending; do not describe a settled request as running.'}`
+    this.fanout([receipt.id], status,
+      receipt.status === 'queued' || receipt.status === 'running' || receipt.status === 'replied' ? 'commentary' : undefined)
   }
 
   private markReady(): void {
@@ -462,7 +475,7 @@ class LiveCallSession {
   }
 
   private fail(message: string): void {
-    if (this.closed) return
+    if (this.closed || this.closing) return
     this.phase = 'error'
     for (const receipt of this.receiptLog.stopTracking()) this.emitReceipt(receipt)
     this.emit({ type: 'error', message })
