@@ -5,6 +5,7 @@ import {
   LIVE_STOP_PATH,
 } from '../ids.js'
 import type { LivePhase, LiveServerEvent } from '../protocol.js'
+import type { LiveTaskReceipt } from '../receipts.js'
 import type { LiveVoice } from '../voices.js'
 
 export interface LiveStatus {
@@ -23,8 +24,10 @@ export interface LiveCallResponse {
 }
 
 export type LiveUiEvent =
+  | { type: 'ready' }
   | { type: 'phase'; phase: LivePhase }
   | { type: 'transcript'; transcript?: { role: 'user' | 'assistant'; text: string; turn: number; final: boolean } }
+  | { type: 'task-receipt'; receipt: LiveTaskReceipt }
   | { type: 'error'; message: string }
   | { type: 'closed' }
 
@@ -65,7 +68,7 @@ export async function startLiveCall(input: {
   return readJson<LiveCallResponse>(await fetchWithTimeout(LIVE_CALLS_PATH, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ sessionId: input.sessionId, sdp: input.sdp, voice: input.voice }),
   }, 40_000))
 }
 
@@ -82,6 +85,7 @@ export function subscribeLiveEvents(
   onEvent: (event: LiveUiEvent) => void,
 ): () => void {
   const source = new EventSource(`${LIVE_EVENTS_PATH}?call=${encodeURIComponent(callToken)}`)
+  let terminalReported = false
   const handle = (message: Event): void => {
     if (!(message instanceof MessageEvent) || typeof message.data !== 'string') return
     try {
@@ -90,9 +94,24 @@ export function subscribeLiveEvents(
       // Ignore a malformed frame; the next event still updates the UI.
     }
   }
+  const handleSourceError = (event: Event): void => {
+    if (event instanceof MessageEvent) {
+      handle(event)
+      return
+    }
+    if (terminalReported || source.readyState !== EventSource.CLOSED) return
+    terminalReported = true
+    source.close()
+    onEvent({
+      type: 'error',
+      message: 'Live voice call ended or was replaced. Try again.',
+    })
+  }
   source.addEventListener('phase', handle)
+  source.addEventListener('ready', handle)
   source.addEventListener('transcript', handle)
-  source.addEventListener('error', handle)
+  source.addEventListener('task-receipt', handle)
+  source.addEventListener('error', handleSourceError)
   source.addEventListener('closed', handle)
   return () => { source.close() }
 }

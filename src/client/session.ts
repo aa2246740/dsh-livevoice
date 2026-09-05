@@ -10,7 +10,12 @@ import {
 import { createLevelMonitor } from './levels.js'
 import { unlockPlayback, type PreparedPlayback } from './playback.js'
 import { acceptLiveAnswer, createLivePeer, type LivePeer } from './webrtc.js'
-import { isLiveSessionProof, parseLiveServerEvent, type LivePhase } from '../protocol.js'
+import { parseLiveServerEvent, type LivePhase } from '../protocol.js'
+import {
+  mergeLiveTaskReceipt,
+  stopTrackingLiveTaskReceipts,
+  type LiveTaskReceipt,
+} from '../receipts.js'
 
 const VOICE_KEY = 'dsh-livevoice.voice'
 const voiceHub = new Set<() => void>()
@@ -41,6 +46,7 @@ export interface LiveClientState {
   voice: LiveVoice
   status?: LiveStatus
   capture?: string
+  receipts: readonly LiveTaskReceipt[]
 }
 
 export type LiveClientListener = (state: LiveClientState) => void
@@ -53,16 +59,23 @@ export class LiveClientSession {
   private stopEvents: (() => void) | undefined
   private stopInputLevels: (() => void) | undefined
   private callToken: string | undefined
+  private startAbort: AbortController | undefined
   private starting = false
   private startGen = 0
-  private mediaSessionReady = false
-  private resolveMediaSession: (() => void) | undefined
+  private sessionProofReady = false
+  private pendingPhase: LivePhase | undefined
+  private sessionProofWaiter: {
+    resolve(): void
+    reject(error: Error): void
+    timer: number
+  } | undefined
   private state: LiveClientState = {
     phase: 'idle',
     muted: false,
     inputLevel: 0,
     outputLevel: 0,
     voice: loadVoice(),
+    receipts: [],
   }
 
   constructor(private readonly sessionId: string) {
@@ -84,11 +97,13 @@ export class LiveClientSession {
     return () => { this.listeners.delete(listener) }
   }
 
-  async refreshStatus(): Promise<void> {
+  async refreshStatus(expectedGen?: number): Promise<void> {
     try {
       const status = await fetchLiveStatus()
+      if (expectedGen !== undefined && expectedGen !== this.startGen) return
       this.patch({ status, voice: resolveLiveVoice(this.state.voice || status.defaultVoice) })
     } catch (error) {
+      if (expectedGen !== undefined && expectedGen !== this.startGen) return
       this.patch({
         status: {
           ready: false,
@@ -130,10 +145,14 @@ export class LiveClientSession {
   toggleMute(): void {
     if (this.state.phase === 'idle') return
     const muted = !this.state.muted
-    this.peer?.setMuted(muted)
+    // Keep RTP disabled throughout dialing; this records the user's eventual
+    // mute choice without turning a mute toggle into a readiness transition.
+    this.peer?.setMuted(this.starting ? true : muted)
     this.patch({
       muted,
-      phase: muted ? 'muted' : this.state.phase === 'muted' ? 'listening' : this.state.phase,
+      phase: this.state.phase === 'connecting'
+        ? 'connecting'
+        : muted ? 'muted' : this.state.phase === 'muted' ? 'listening' : this.state.phase,
       inputLevel: muted ? 0 : this.state.inputLevel,
     })
   }
@@ -141,8 +160,11 @@ export class LiveClientSession {
   async start(): Promise<void> {
     if (this.state.phase !== 'idle') return
     const gen = ++this.startGen
+    const abort = new AbortController()
+    this.startAbort = abort
     this.starting = true
-    this.mediaSessionReady = false
+    this.sessionProofReady = false
+    this.pendingPhase = undefined
     this.patch({
       phase: 'connecting',
       stage: 'dial.mic',
@@ -155,8 +177,9 @@ export class LiveClientSession {
     this.playback = playback
     try {
       if (this.state.status?.ready !== true) {
-        await this.refreshStatus()
+        await this.refreshStatus(gen)
       }
+      if (gen !== this.startGen) return
       if (this.state.status?.ready !== true) {
         throw new Error(this.state.status
           ? 'No Codex OAuth credential is available. Sign in to ChatGPT Codex first.'
@@ -165,19 +188,32 @@ export class LiveClientSession {
       this.patch({ stage: 'dial.offer' })
       const created = await createLivePeer({
         onRemoteStream: stream => {
+          if (gen !== this.startGen) {
+            stream.getTracks().forEach(track => track.stop())
+            return
+          }
           this.remoteStream = stream
           playback.attach(stream)
         },
         onIceState: () => {
-          if (this.state.phase === 'connecting') {
+          if (gen === this.startGen && this.state.phase === 'connecting') {
             this.patch({ stage: 'dial.media' })
           }
         },
-        onControlPayload: payload => this.applyControlPayload(payload),
+        onControlPayload: payload => {
+          if (gen === this.startGen) this.applyControlPayload(payload)
+        },
+        signal: abort.signal,
       })
+      if (gen !== this.startGen) {
+        created.peer.close()
+        return
+      }
       this.peer = created.peer
+      created.peer.setMuted(true)
       this.patch({ capture: created.peer.captureLabel })
       this.stopInputLevels = createLevelMonitor(created.peer.localStream, (level) => {
+        if (gen !== this.startGen) return
         if (this.state.muted) {
           if (this.state.inputLevel !== 0) this.patch({ inputLevel: 0 })
           return
@@ -191,17 +227,35 @@ export class LiveClientSession {
         sdp: created.offer,
         voice: this.state.voice,
       })
+      if (gen !== this.startGen) {
+        try {
+          await stopLiveCall(call.callToken)
+        } catch {
+          // A cancelled late response may already have been closed server-side.
+        }
+        return
+      }
       this.callToken = call.callToken
-      this.stopEvents = subscribeLiveEvents(call.callToken, (event) => this.handleEvent(event))
+      this.stopEvents = subscribeLiveEvents(call.callToken, (event) => {
+        if (gen === this.startGen) this.handleEvent(event)
+      })
       this.patch({ stage: 'dial.media' })
       await acceptLiveAnswer(created.peer, call.answer)
+      if (gen !== this.startGen) return
       this.trace('ice+oai-events')
       this.patch({ stage: 'dial.ear' })
-      await this.waitForMediaSession(20_000)
-      this.trace(this.mediaSessionReady ? 'session-proof' : 'listening-without-proof')
+      await this.waitForSessionProof(20_000)
       if (gen !== this.startGen || !this.peer) return
+      if (!created.peer.isMicrophoneUsable()) {
+        throw new Error('Microphone capture ended before the live session became ready.')
+      }
+      created.peer.setMuted(this.state.muted)
+      const pendingPhase = this.pendingPhase
+      this.pendingPhase = undefined
       this.patch({
-        phase: this.state.muted ? 'muted' : 'listening',
+        phase: this.state.muted
+          ? 'muted'
+          : pendingPhase && pendingPhase !== 'connecting' ? pendingPhase : 'listening',
         stage: undefined,
         dialStartedAt: undefined,
       })
@@ -209,6 +263,7 @@ export class LiveClientSession {
       if (gen !== this.startGen || this.state.phase === 'idle') return
       await this.stop(error instanceof Error ? error.message : String(error))
     } finally {
+      if (this.startAbort === abort) this.startAbort = undefined
       if (gen === this.startGen) this.starting = false
     }
   }
@@ -216,9 +271,11 @@ export class LiveClientSession {
   async stop(error?: string): Promise<void> {
     this.startGen += 1
     this.starting = false
-    this.resolveMediaSession?.()
-    this.resolveMediaSession = undefined
-    this.mediaSessionReady = false
+    this.startAbort?.abort()
+    this.startAbort = undefined
+    this.rejectSessionProof(new Error('Live voice start was cancelled'))
+    this.sessionProofReady = false
+    this.pendingPhase = undefined
     const callToken = this.callToken
     this.callToken = undefined
     this.stopEvents?.()
@@ -230,13 +287,6 @@ export class LiveClientSession {
     this.remoteStream = undefined
     this.peer?.close()
     this.peer = undefined
-    if (callToken) {
-      try {
-        await stopLiveCall(callToken)
-      } catch {
-        // Local teardown still completes if the host call is already gone.
-      }
-    }
     this.patch({
       phase: 'idle',
       stage: undefined,
@@ -245,19 +295,36 @@ export class LiveClientSession {
       inputLevel: 0,
       outputLevel: 0,
       capture: undefined,
+      receipts: stopTrackingLiveTaskReceipts(this.state.receipts),
       ...error === undefined ? { error: this.state.error } : { error },
     })
+    if (callToken) {
+      try {
+        await stopLiveCall(callToken)
+      } catch {
+        // Local teardown still completes if the host call is already gone.
+      }
+    }
   }
 
   private applyControlPayload(payload: string): void {
     const event = parseLiveServerEvent(payload)
-    if (event && isLiveSessionProof(event)) this.markMediaSessionReady()
+    if (event?.type === 'session.started' || event?.type === 'session.updated') {
+      this.markSessionProofReady()
+    }
     if (event?.type === 'error') this.handleEvent({ type: 'error', message: event.message })
   }
 
   private handleEvent(event: LiveUiEvent): void {
+    if (event.type === 'ready') {
+      this.markSessionProofReady()
+      return
+    }
     if (event.type === 'phase') {
-      if (this.starting && event.phase === 'listening') return
+      if (this.starting) {
+        this.pendingPhase = event.phase
+        return
+      }
       const phase = this.state.muted ? 'muted' : event.phase
       this.patch({
         phase,
@@ -265,19 +332,19 @@ export class LiveClientSession {
           ? { stage: undefined, dialStartedAt: undefined }
           : {},
       })
-      if (event.phase === 'working' || event.phase === 'speaking' || event.phase === 'muted') {
-        this.markMediaSessionReady()
-      }
       return
     }
     if (event.type === 'transcript') {
-      if (event.transcript) this.markMediaSessionReady()
       this.patch({
         transcript: event.transcript
           ? { role: event.transcript.role, text: event.transcript.text, final: event.transcript.final }
           : undefined,
-        stage: undefined,
+        ...this.starting ? {} : { stage: undefined },
       })
+      return
+    }
+    if (event.type === 'task-receipt') {
+      this.patch({ receipts: mergeLiveTaskReceipt(this.state.receipts, event.receipt) })
       return
     }
     if (event.type === 'error') {
@@ -289,25 +356,33 @@ export class LiveClientSession {
     }
   }
 
-  private waitForMediaSession(ms: number): Promise<void> {
-    if (this.mediaSessionReady) return Promise.resolve()
-    return new Promise(resolve => {
+  private waitForSessionProof(ms: number): Promise<void> {
+    if (this.sessionProofReady) return Promise.resolve()
+    return new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
-        this.resolveMediaSession = undefined
-        resolve()
+        this.sessionProofWaiter = undefined
+        reject(new Error('Codex live session did not become ready within 20 seconds.'))
       }, ms)
-      this.resolveMediaSession = () => {
-        window.clearTimeout(timer)
-        this.resolveMediaSession = undefined
-        resolve()
-      }
+      this.sessionProofWaiter = { resolve, reject, timer }
     })
   }
 
-  private markMediaSessionReady(): void {
-    if (!this.mediaSessionReady) this.trace('session-proof')
-    this.mediaSessionReady = true
-    this.resolveMediaSession?.()
+  private markSessionProofReady(): void {
+    if (!this.sessionProofReady) this.trace('session-proof')
+    this.sessionProofReady = true
+    const waiter = this.sessionProofWaiter
+    if (!waiter) return
+    window.clearTimeout(waiter.timer)
+    this.sessionProofWaiter = undefined
+    waiter.resolve()
+  }
+
+  private rejectSessionProof(error: Error): void {
+    const waiter = this.sessionProofWaiter
+    if (!waiter) return
+    window.clearTimeout(waiter.timer)
+    this.sessionProofWaiter = undefined
+    waiter.reject(error)
   }
 
   private trace(label: string): void {

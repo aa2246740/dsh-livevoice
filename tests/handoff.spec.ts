@@ -89,21 +89,15 @@ describe('renderWorkerHandoff', () => {
 describe('briefLiveDelegation', () => {
   const oral = '就是我们在做的这个。东西啊,那个- 这个产品啊,这个页面。你让那个agent继续搞吗'
 
-  it('does not send the live oral dump as the worker brief', () => {
+  it('preserves a complete colloquial question instead of regex-rewriting its meaning', () => {
     const input = briefLiveDelegation({ liveText: oral, lastUserSpeech: oral })
-    expect(input).toBeDefined()
-    expect(input).not.toBe(oral)
-    expect(input).not.toContain('东西啊')
-    expect(input).not.toContain('那个-')
-    expect(input).not.toContain('你让那个agent')
-    expect(input).toContain('继续')
-    expect(input).toMatch(/产品|页面/)
+    expect(input).toBe(oral)
   })
 
-  it('drops greetings and small talk so they never reach the worker', () => {
+  it('drops only provably pure greetings', () => {
     expect(briefLiveDelegation({ liveText: 'Hi' })).toBeUndefined()
-    expect(briefLiveDelegation({ liveText: 'Hey. What’s up? Hey. What’s up?' })).toBeUndefined()
-    expect(briefLiveDelegation({ liveText: '那个 你还好吗' })).toBeUndefined()
+    expect(briefLiveDelegation({ liveText: '您好！' })).toBeUndefined()
+    expect(briefLiveDelegation({ liveText: '你好，看看当前任务进度' })).toBe('你好，看看当前任务进度')
   })
 
   it('passes through an already-clean imperative brief', () => {
@@ -111,24 +105,23 @@ describe('briefLiveDelegation', () => {
     expect(briefLiveDelegation({ liveText: clean })).toBe(clean)
   })
 
-  it('rewrites a first-person oral dump that matches the in-progress transcript', () => {
-    const dump = '你让我卡做一个Fapaper的小游戏,让他用Codex来做'
-    const input = briefLiveDelegation({ liveText: dump, lastUserSpeech: dump })
-    expect(input).toBeDefined()
-    expect(input).not.toBe(dump)
-    expect(input).not.toMatch(/^你让/)
-    expect(input).toContain('做一个')
-    expect(input).toContain('Codex')
+  it('keeps a fragment intact so recent transcript can resolve it downstream', () => {
+    expect(briefLiveDelegation({ liveText: '就按刚才第二个方案' })).toBe('就按刚才第二个方案')
   })
 
-  it('does not delegate a status check', () => {
+  it('allows a read-only status request to reach the worker', () => {
     expect(briefLiveDelegation({
       liveText: '开工了吗?正在做吗?项目叫啥',
       lastUserSpeech: '开工了吗?正在做 吗?那个 项目 叫啥',
-    })).toBeUndefined()
+    })).toBe('开工了吗?正在做吗?项目叫啥')
   })
 
-  it('puts the rewritten brief in <input>, not the oral hear text', () => {
+  it('keeps hypotheticals distinct from explicit change requests', () => {
+    expect(briefLiveDelegation({ liveText: '假如让你优化会怎么做' })).toBe('假如让你优化会怎么做')
+    expect(briefLiveDelegation({ liveText: '现在优化' })).toBe('现在优化')
+  })
+
+  it('puts the exact current request in <input> and recent speech in context', () => {
     const input = briefLiveDelegation({ liveText: oral, lastUserSpeech: oral })
     if (input === undefined) throw new Error('expected a brief')
     const rendered = renderRealtimeDelegation({
@@ -137,7 +130,14 @@ describe('briefLiveDelegation', () => {
     })
     const parsed = parseRealtimeDelegation(rendered ?? '')
     expect(parsed?.input).toBe(input)
-    expect(parsed?.input).not.toBe(oral)
+    expect(parsed?.input).toBe(oral)
     expect(parsed?.transcriptDelta).toEqual([{ role: 'user', text: oral }])
+  })
+
+  it('tells the worker that context resolves fragments without expanding authorization', () => {
+    expect(WORKER_HANDOFF_PREFACE).toContain('resolve references or fragments')
+    expect(WORKER_HANDOFF_PREFACE).toContain('Context does not expand scope')
+    expect(WORKER_HANDOFF_PREFACE).toContain('authorize explanation only')
+    expect(WORKER_HANDOFF_PREFACE).toContain('Read-only status questions are valid requests')
   })
 })

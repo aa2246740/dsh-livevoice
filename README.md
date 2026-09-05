@@ -41,9 +41,19 @@ If none of those hold an OAuth grant, the Live button fails with `No Codex OAuth
 
 The voice model is `gpt-live-1-codex`. It only talks. Repository work is delegated into this DSH session.
 
+Delegation preserves the user's current wording. A bounded recent transcript is attached separately so the worker can resolve references and sentence fragments without inheriting broader authorization: asking how a change could be done remains analysis, while an explicit request to do it authorizes execution. Read-only repository and session-status questions may be delegated.
+
 ## Use
 
 Composer **Live** button, or `Ctrl+L`, or `/live`. Esc ends the call. Space mutes while the live bar is focused.
+
+“Ready — speak now” is shown only after WebRTC media/data-channel connection, an explicit Codex session-ready event, and a live microphone track. Until then the UI remains connecting and microphone transmission stays gated. A readiness timeout fails with a retry action; it never silently counts as connected. You can cancel while dialing.
+
+The Host maintains one live call across browser pages. Concurrent dials are serialized; a later dial replaces the earlier call. Failed dials do not block the queue, and shutdown waits for earlier dial attempts before clearing their calls.
+
+The live dock shows task receipts for the actual input and handoff sent to DSH. States come from dispatch, matching `agent/inbox/claimed`, `agent/inbox/discarded`, and the claimed turn's `turn/end` reason. “Worker replied” means only that the matching completed turn produced final assistant text; it is not verification of the work.
+
+The server replays current-call receipts when the SSE connection reconnects and keeps all active receipts plus the 24 most recent settled receipts. The current page keeps its existing cards after hangup, when another call replaces the current call, and across a redial; replacement stops live tracking for the old call. Refreshing the page loses page-local history, and a newly opened page cannot retrieve receipts from an old replaced call because there is deliberately no new database. When a call ends while DSH work continues, its card freezes at “Call ended · follow in session” instead of pretending the work failed or completed.
 
 Voice names match Codex: arbor, breeze, cove, ember, juniper, maple, sol, spruce, vale.
 

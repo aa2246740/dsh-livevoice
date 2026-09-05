@@ -17,6 +17,7 @@ export function lastAssistantTextForTurn(events: readonly SessionEvent[], turn: 
   let text = ''
   for (const event of events) {
     if (event.type !== 'assistant/message' || event.data.turn !== turn) continue
+    if (hasToolCalls(event.data.message.content)) continue
     const next = textFromBlocks(event.data.message.content)
     if (next) text = next
   }

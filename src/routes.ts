@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { CodexAuthError, describeCodexAuth } from './auth.js'
-import type { LiveCallRegistry } from './controller.js'
+import type { LiveCallHandle, LiveCallRegistry } from './controller.js'
 import { errorMessage, json, readJson, trustedRequest, writeSse } from './http.js'
 import type { LiveProxy } from './proxy.js'
 import { warmupLiveSignaling } from './signaling.js'
@@ -54,14 +54,39 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
         const sessionId = stringField(body, 'sessionId')
         const offer = stringField(body, 'sdp') ?? stringField(body, 'offer')
         if (!sessionId || !offer) return json(res, 400, { error: 'sessionId and sdp are required' })
+        let responseFinished = false
+        let requesterGone = false
+        let startedCall: LiveCallHandle | undefined
+        const closeUnclaimedCall = (): void => {
+          if (responseFinished) return
+          requesterGone = true
+          if (startedCall) {
+            void startedCall.close().catch(() => {
+              // The requester is already gone; registry ownership was removed
+              // before session close, so no later call can be affected.
+            })
+          }
+        }
+        req.once('aborted', closeUnclaimedCall)
+        res.once('close', closeUnclaimedCall)
+        res.once('finish', () => {
+          responseFinished = true
+          req.off('aborted', closeUnclaimedCall)
+          res.off('close', closeUnclaimedCall)
+        })
         try {
-          console.log(`[dsh-livevoice] call start session=${sessionId}`)
+          console.log('[dsh-livevoice] call start')
           const call = await registry.start({
             sessionId,
             offer,
             voice: stringField(body, 'voice'),
           })
-          console.log(`[dsh-livevoice] call ready ${call.callId}`)
+          startedCall = call
+          if (requesterGone) {
+            await call.close()
+            return
+          }
+          console.log('[dsh-livevoice] call negotiated')
           json(res, 200, {
             callToken: call.callToken,
             callId: call.callId,
@@ -69,6 +94,7 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
             voice: call.voice,
           })
         } catch (error) {
+          if (requesterGone) return
           const message = errorMessage(error)
           console.error(`[dsh-livevoice] call failed: ${message}`)
           const status = error instanceof CodexAuthError ? 401 : 502

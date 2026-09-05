@@ -13,6 +13,7 @@ export interface LivePeer {
   readonly localStream: MediaStream
   readonly eventsChannel: RTCDataChannel
   readonly captureLabel: string
+  isMicrophoneUsable(): boolean
   setMuted(muted: boolean): void
   close(): void
 }
@@ -21,16 +22,33 @@ export async function createLivePeer(options: {
   onRemoteStream(stream: MediaStream): void
   onIceState(state: string): void
   onControlPayload?(payload: string): void
+  signal?: AbortSignal
 }): Promise<{ peer: LivePeer; offer: string }> {
-  const localStream = await captureMicrophone()
+  const localStream = await captureMicrophone(options.signal)
+  let pc: RTCPeerConnection | undefined
+  const dispose = (): void => {
+    localStream.getTracks().forEach(track => track.stop())
+    pc?.close()
+  }
+  throwIfAborted(options.signal, dispose)
   const audioTrack = localStream.getAudioTracks()[0]
   if (audioTrack === undefined) {
-    localStream.getTracks().forEach(track => track.stop())
+    dispose()
     throw new Error('Microphone track is missing')
   }
-  const captureLabel = await waitForMicCapture(audioTrack)
+  let captureLabel: string
+  try {
+    captureLabel = await waitForMicCapture(audioTrack, options.signal)
+    throwIfAborted(options.signal, dispose)
+  } catch (error) {
+    dispose()
+    throw error
+  }
+  // Prove capture first, then keep RTP gated until the client has both the
+  // connected transport and an actual session.started/session.updated event.
+  audioTrack.enabled = false
 
-  const pc = new RTCPeerConnection({
+  pc = new RTCPeerConnection({
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceCandidatePoolSize: 2,
@@ -39,48 +57,61 @@ export async function createLivePeer(options: {
       { urls: 'stun:stun.cloudflare.com:3478' },
     ],
   })
-  pc.addEventListener('iceconnectionstatechange', () => {
-    options.onIceState(pc.iceConnectionState)
+  const peerConnection = pc
+  peerConnection.addEventListener('iceconnectionstatechange', () => {
+    options.onIceState(peerConnection.iceConnectionState)
   })
   let delivered = false
-  pc.addEventListener('track', (event) => {
+  peerConnection.addEventListener('track', (event) => {
     if (event.track.kind !== 'audio' || delivered) return
     delivered = true
     const stream = event.streams[0] ?? new MediaStream([event.track])
     options.onRemoteStream(stream)
   })
 
-  const eventsChannel = pc.createDataChannel(LIVE_EVENTS_CHANNEL, { ordered: true })
+  const eventsChannel = peerConnection.createDataChannel(LIVE_EVENTS_CHANNEL, { ordered: true })
   eventsChannel.addEventListener('message', (event) => {
     if (typeof event.data !== 'string') return
     options.onControlPayload?.(event.data)
   })
-  const transceiver = pc.addTransceiver(audioTrack, { direction: 'sendrecv', streams: [localStream] })
+  const transceiver = peerConnection.addTransceiver(audioTrack, { direction: 'sendrecv', streams: [localStream] })
   preferOpus(transceiver)
 
-  const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false })
-  await pc.setLocalDescription(offer)
-  await waitForIceGathering(pc)
-  const sdp = pc.localDescription?.sdp
+  let offer: RTCSessionDescriptionInit
+  try {
+    offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false })
+    throwIfAborted(options.signal, dispose)
+    await peerConnection.setLocalDescription(offer)
+    throwIfAborted(options.signal, dispose)
+    await waitForIceGathering(peerConnection, options.signal)
+    throwIfAborted(options.signal, dispose)
+  } catch (error) {
+    dispose()
+    throw error
+  }
+  const sdp = peerConnection.localDescription?.sdp
   if (!sdp || !sdp.includes('m=audio') || !sdp.includes('m=application')) {
-    pc.close()
+    peerConnection.close()
     localStream.getTracks().forEach(track => track.stop())
     throw new Error('WebRTC produced an offer without audio or the oai-events data channel')
   }
   return {
     offer: sdp,
     peer: {
-      pc,
+      pc: peerConnection,
       localStream,
       eventsChannel,
       captureLabel,
+      isMicrophoneUsable() {
+        return audioTrack.readyState === 'live' && !audioTrack.muted
+      },
       setMuted(value) {
         audioTrack.enabled = !value
       },
       close() {
         eventsChannel.close()
         localStream.getTracks().forEach(track => track.stop())
-        pc.close()
+        peerConnection.close()
       },
     },
   }
@@ -96,31 +127,50 @@ export async function acceptLiveAnswer(peer: LivePeer, answer: string): Promise<
   await Promise.all([waitForIceConnected(peer.pc), waitForEventsChannel(peer.eventsChannel)])
 }
 
-async function captureMicrophone(): Promise<MediaStream> {
-  try {
-    return await Promise.race([
-      navigator.mediaDevices.getUserMedia({
+async function captureMicrophone(signal?: AbortSignal): Promise<MediaStream> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (result: { stream: MediaStream } | { error: Error }): void => {
+      if (settled) {
+        if ('stream' in result) result.stream.getTracks().forEach(track => track.stop())
+        return
+      }
+      settled = true
+      window.clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if ('stream' in result) resolve(result.stream)
+      else reject(result.error)
+    }
+    const onAbort = (): void => { finish({ error: new Error('Live voice start was cancelled') }) }
+    const timer = window.setTimeout(() => {
+      finish({ error: new Error('Microphone permission timed out') })
+    }, 15_000)
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: false,
           channelCount: 1,
         },
-      }),
-      new Promise<MediaStream>((_, reject) => {
-        window.setTimeout(() => reject(new Error('Microphone permission timed out')), 15_000)
-      }),
-    ])
-  } catch (error) {
-    const name = error instanceof DOMException ? error.name : ''
-    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-      throw new Error('系统或 DSH.app 拒绝了麦克风。状态栏没有橙色录音点时 Codex 听不到。请在系统设置 → 隐私与安全性 → 麦克风里打开 DSH，并重新打开 DSH.app。')
-    }
-    throw error instanceof Error ? error : new Error(String(error))
-  }
+      })
+      .then(stream => finish({ stream }))
+      .catch((error: unknown) => {
+        const name = error instanceof DOMException ? error.name : ''
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+          finish({ error: new Error('系统或 DSH.app 拒绝了麦克风。状态栏没有橙色录音点时 Codex 听不到。请在系统设置 → 隐私与安全性 → 麦克风里打开 DSH，并重新打开 DSH.app。') })
+          return
+        }
+        finish({ error: error instanceof Error ? error : new Error(String(error)) })
+      })
+  })
 }
 
-async function waitForMicCapture(track: MediaStreamTrack): Promise<string> {
+async function waitForMicCapture(track: MediaStreamTrack, signal?: AbortSignal): Promise<string> {
   const deadline = Date.now() + 4_000
   while (Date.now() < deadline) {
     if (track.readyState !== 'live') {
@@ -130,17 +180,35 @@ async function waitForMicCapture(track: MediaStreamTrack): Promise<string> {
       const settings = track.getSettings()
       return track.label || settings.deviceId || 'microphone'
     }
-    await new Promise<void>((resolve) => {
-      const timer = window.setTimeout(resolve, 80)
-      track.addEventListener('unmute', () => {
-        window.clearTimeout(timer)
-        resolve()
-      }, { once: true })
-    })
+    await waitForTrackUnmute(track, signal)
   }
   throw new Error(
     `麦克风一直处于 muted（${track.readyState}）。系统状态栏没有橙色录音点，Codex 只能收到静音。`,
   )
+}
+
+function waitForTrackUnmute(track: MediaStreamTrack, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const finish = (error?: Error): void => {
+      window.clearTimeout(timer)
+      track.removeEventListener('unmute', onUnmute)
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
+    }
+    const timer = window.setTimeout(() => finish(), 80)
+    const onUnmute = (): void => { finish() }
+    const onAbort = (): void => { finish(new Error('Live voice start was cancelled')) }
+    track.addEventListener('unmute', onUnmute, { once: true })
+    if (signal?.aborted) onAbort()
+    else signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function throwIfAborted(signal: AbortSignal | undefined, dispose: () => void): void {
+  if (!signal?.aborted) return
+  dispose()
+  throw new Error('Live voice start was cancelled')
 }
 
 function preferOpus(transceiver: RTCRtpTransceiver): void {
@@ -150,14 +218,16 @@ function preferOpus(transceiver: RTCRtpTransceiver): void {
   if (opus.length > 0) transceiver.setCodecPreferences(opus)
 }
 
-function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
+function waitForIceGathering(pc: RTCPeerConnection, signal?: AbortSignal): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve()
-  return new Promise((resolve) => {
-    const finish = (): void => {
+  return new Promise((resolve, reject) => {
+    const finish = (error?: Error): void => {
       window.clearTimeout(timer)
       pc.removeEventListener('icegatheringstatechange', onGathering)
       pc.removeEventListener('icecandidate', onCandidate)
-      resolve()
+      signal?.removeEventListener('abort', onAbort)
+      if (error) reject(error)
+      else resolve()
     }
     const timer = window.setTimeout(finish, ICE_GATHER_MS)
     const onGathering = (): void => {
@@ -166,9 +236,14 @@ function waitForIceGathering(pc: RTCPeerConnection): Promise<void> {
     const onCandidate = (event: RTCPeerConnectionIceEvent): void => {
       if (event.candidate === null) finish()
     }
+    const onAbort = (): void => { finish(new Error('Live voice start was cancelled')) }
     pc.addEventListener('icegatheringstatechange', onGathering)
     pc.addEventListener('icecandidate', onCandidate)
-    if (pc.iceGatheringState === 'complete') finish()
+    if (signal?.aborted) onAbort()
+    else {
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (pc.iceGatheringState === 'complete') finish()
+    }
   })
 }
 
