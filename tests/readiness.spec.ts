@@ -4,10 +4,23 @@ const mocks = vi.hoisted(() => ({
   status: vi.fn(), start: vi.fn(), stop: vi.fn(), subscribe: vi.fn(),
   peer: vi.fn(), accept: vi.fn(), levels: vi.fn(), playback: vi.fn(),
 }))
-vi.mock('../src/client/api.js', () => ({
-  fetchLiveStatus: mocks.status, startLiveCall: mocks.start, stopLiveCall: mocks.stop,
-  subscribeLiveEvents: mocks.subscribe,
-}))
+vi.mock('../src/client/api.js', () => {
+  class LiveCallError extends Error {
+    readonly kind: string
+    constructor(message: string, kind = 'unknown') {
+      super(message)
+      this.name = 'LiveCallError'
+      this.kind = kind
+    }
+  }
+  return {
+    fetchLiveStatus: mocks.status,
+    startLiveCall: mocks.start,
+    stopLiveCall: mocks.stop,
+    subscribeLiveEvents: mocks.subscribe,
+    LiveCallError,
+  }
+})
 vi.mock('../src/client/webrtc.js', () => ({ createLivePeer: mocks.peer, acceptLiveAnswer: mocks.accept }))
 vi.mock('../src/client/levels.js', () => ({ createLevelMonitor: mocks.levels }))
 vi.mock('../src/client/playback.js', () => ({ unlockPlayback: mocks.playback }))

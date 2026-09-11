@@ -1,17 +1,22 @@
+import type { LiveUiEvent } from '../events.js'
 import {
   LIVE_CALLS_PATH,
   LIVE_EVENTS_PATH,
   LIVE_STATUS_PATH,
   LIVE_STOP_PATH,
 } from '../ids.js'
-import type { LivePhase, LiveServerEvent } from '../protocol.js'
-import type { LiveTaskReceipt } from '../receipts.js'
+import { isLiveFailureKind, type LiveFailureKind } from '../kinds.js'
+import type { LiveServerEvent } from '../protocol.js'
 import type { LiveVoice } from '../voices.js'
+
+export type { LiveUiEvent }
 
 export interface LiveStatus {
   ready: boolean
   source: 'dsh-oauth-login' | 'dsh-llm' | 'codex-cli' | 'none'
   expiresAt?: number
+  accountHint?: string
+  expired?: boolean
   voices: readonly { value: LiveVoice; label: string }[]
   defaultVoice: LiveVoice
 }
@@ -23,22 +28,40 @@ export interface LiveCallResponse {
   voice: LiveVoice
 }
 
-export type LiveUiEvent =
-  | { type: 'ready' }
-  | { type: 'phase'; phase: LivePhase }
-  | { type: 'transcript'; transcript?: { role: 'user' | 'assistant'; text: string; turn: number; final: boolean } }
-  | { type: 'task-receipt'; receipt: LiveTaskReceipt }
-  | { type: 'error'; message: string }
-  | { type: 'closed' }
+export class LiveCallError extends Error {
+  readonly kind: LiveFailureKind
+  readonly upstreamStatus?: number
+
+  constructor(message: string, kind: LiveFailureKind = 'unknown', upstreamStatus?: number) {
+    super(message)
+    this.name = 'LiveCallError'
+    this.kind = kind
+    this.upstreamStatus = upstreamStatus
+  }
+}
+
+function liveErrorFromBody(parsed: unknown, status: number, fallback: string): LiveCallError {
+  if (typeof parsed !== 'object' || parsed === null) {
+    return new LiveCallError(fallback, status === 401 ? 'auth' : 'unknown', status)
+  }
+  const record = parsed as { error?: unknown; kind?: unknown; upstreamStatus?: unknown }
+  const message = typeof record.error === 'string' && record.error.length > 0 ? record.error : fallback
+  const kind = typeof record.kind === 'string' && isLiveFailureKind(record.kind)
+    ? record.kind
+    : status === 401 ? 'auth'
+      : status === 403 ? 'forbidden'
+        : status === 429 ? 'quota'
+          : status === 409 ? 'session'
+            : 'unknown'
+  const upstream = typeof record.upstreamStatus === 'number' ? record.upstreamStatus : status
+  return new LiveCallError(message, kind, upstream)
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text()
   const parsed: unknown = text.length === 0 ? {} : JSON.parse(text)
   if (!response.ok) {
-    const message = typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof parsed.error === 'string'
-      ? parsed.error
-      : `Live voice request failed (${response.status})`
-    throw new Error(message)
+    throw liveErrorFromBody(parsed, response.status, `Live voice request failed (${response.status})`)
   }
   return parsed as T
 }
@@ -53,7 +76,12 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   try {
     return await fetch(url, { ...init, signal: abort.signal, credentials: 'same-origin' })
   } catch (error) {
-    if (abort.signal.aborted) throw new Error(`Live voice request timed out after ${Math.round(timeoutMs / 1000)}s`)
+    if (abort.signal.aborted) {
+      throw new LiveCallError(
+        `Live voice request timed out after ${Math.round(timeoutMs / 1000)}s`,
+        'network',
+      )
+    }
     throw error
   } finally {
     window.clearTimeout(timer)
@@ -105,12 +133,14 @@ export function subscribeLiveEvents(
     onEvent({
       type: 'error',
       message: 'Live voice call ended or was replaced. Try again.',
+      kind: 'network',
     })
   }
   source.addEventListener('phase', handle)
   source.addEventListener('ready', handle)
   source.addEventListener('transcript', handle)
   source.addEventListener('task-receipt', handle)
+  source.addEventListener('usage', handle)
   source.addEventListener('error', handleSourceError)
   source.addEventListener('closed', handle)
   return () => { source.close() }

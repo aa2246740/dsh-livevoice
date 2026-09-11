@@ -61,4 +61,4 @@ The server replays current-call receipts when the SSE connection reconnects and 
 
 Voice names match Codex: arbor, breeze, cove, ember, juniper, maple, sol, spruce, vale.
 
-HTTP/WS outbound honors `$DSH_HOME/.dsh-oauth-proxy.json` (same file as dsh-oauth-login) and `HTTPS_PROXY`.
+HTTP/WS outbound honors `$DSH_HOME/.dsh-oauth-proxy.json` (same file as dsh-oauth-login) and `HTTPS_PROXY`. Browser audio uses WebRTC from the current device to OpenAI; being on this machine or the same LAN only means the control plane goes through DSH.

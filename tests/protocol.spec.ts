@@ -59,12 +59,34 @@ describe('Frameless Bidi server events', () => {
     expect(isLiveSessionProof(event)).toBe(true)
   })
 
-  it('does not treat errors or unknown wire types as live-session proof', () => {
+  it('does not treat errors or usage events as live-session proof', () => {
     const error = parseLiveServerEvent({ type: 'error', message: 'nope' })
-    const unknown = parseLiveServerEvent({ type: 'session.usage.updated' })
-    if (error === null || unknown === null) throw new Error('expected parsed events')
+    const usage = parseLiveServerEvent({ type: 'session.usage.updated' })
+    if (error === null || usage === null) throw new Error('expected parsed events')
     expect(isLiveSessionProof(error)).toBe(false)
-    expect(isLiveSessionProof(unknown)).toBe(false)
+    expect(isLiveSessionProof(usage)).toBe(false)
+    expect(usage).toEqual({ type: 'session.usage.updated', metrics: [] })
+  })
+
+  it('keeps session.usage.updated fields as metrics without inventing remaining minutes', () => {
+    expect(parseLiveServerEvent({
+      type: 'session.usage.updated',
+      usage: { input_tokens: 12, output_tokens: 4, audio: { seconds: 9 } },
+    })).toEqual({
+      type: 'session.usage.updated',
+      metrics: [
+        { name: 'input_tokens', value: 12 },
+        { name: 'output_tokens', value: 4 },
+        { name: 'audio.seconds', value: 9 },
+      ],
+    })
+  })
+
+  it('parses rate_limits.updated remaining as a raw metric', () => {
+    expect(parseLiveServerEvent({ type: 'rate_limits.updated', remaining: 3 })).toEqual({
+      type: 'rate_limits.updated',
+      metrics: [{ name: 'remaining', value: 3 }],
+    })
   })
 
   it('parses input and output transcript deltas', () => {
@@ -109,9 +131,9 @@ describe('Frameless Bidi server events', () => {
   })
 
   it('classifies unsupported events and rejects malformed known events', () => {
-    expect(parseLiveServerEvent({ type: 'rate_limits.updated', remaining: 3 })).toEqual({
+    expect(parseLiveServerEvent({ type: 'session.updated.unknown', remaining: 3 })).toEqual({
       type: 'unknown',
-      wireType: 'rate_limits.updated',
+      wireType: 'session.updated.unknown',
     })
     expect(parseLiveServerEvent({ type: 'output_audio.delta', audio: 12 })).toBeNull()
     expect(parseLiveServerEvent({ type: 'turn.done', turn: { role: 'tool', transcript: 'no' } })).toBeNull()

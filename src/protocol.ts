@@ -30,6 +30,13 @@ export type LiveClientMessage =
   }
   | { type: 'session.close' }
 
+export type LiveUsageSource = 'session.usage.updated' | 'rate_limits.updated'
+
+export type LiveUsageMetric = {
+  readonly name: string
+  readonly value: number | string
+}
+
 export type LiveServerEvent =
   | {
     type: 'session.started' | 'session.updated'
@@ -49,6 +56,7 @@ export type LiveServerEvent =
       content: LiveInputTextContent[]
     }
   }
+  | { type: LiveUsageSource; metrics: LiveUsageMetric[] }
   | { type: 'error'; message: string }
   | { type: 'unknown'; wireType: string }
 
@@ -169,6 +177,63 @@ function parseErrorEvent(payload: UnknownRecord): LiveServerEvent | null {
   return message === null ? null : { type: 'error', message }
 }
 
+function parseUsageValue(value: unknown): number | string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+  return undefined
+}
+
+function addUsageMetric(
+  metrics: LiveUsageMetric[],
+  seen: Set<string>,
+  name: string,
+  value: unknown,
+): void {
+  const parsed = parseUsageValue(value)
+  if (parsed === undefined || seen.has(name)) return
+  seen.add(name)
+  metrics.push({ name, value: parsed })
+}
+
+function addUsageRecord(
+  metrics: LiveUsageMetric[],
+  seen: Set<string>,
+  record: UnknownRecord,
+  prefix?: string,
+): void {
+  for (const [name, value] of Object.entries(record)) {
+    const key = prefix === undefined ? name : `${prefix}.${name}`
+    if (isRecord(value)) {
+      for (const [nestedName, nestedValue] of Object.entries(value)) {
+        addUsageMetric(metrics, seen, `${key}.${nestedName}`, nestedValue)
+      }
+      continue
+    }
+    addUsageMetric(metrics, seen, key, value)
+  }
+}
+
+export function parseUsageMetrics(payload: UnknownRecord): LiveUsageMetric[] {
+  const metrics: LiveUsageMetric[] = []
+  const seen = new Set<string>()
+  if (isRecord(payload.usage)) addUsageRecord(metrics, seen, payload.usage)
+  if (isRecord(payload.session) && isRecord(payload.session.usage)) {
+    addUsageRecord(metrics, seen, payload.session.usage)
+  }
+  for (const [name, value] of Object.entries(payload)) {
+    if (name === 'type' || name === 'usage' || name === 'session' || name === 'event_id') continue
+    addUsageMetric(metrics, seen, name, value)
+  }
+  return metrics
+}
+
+export function formatLiveUsageMetrics(metrics: readonly LiveUsageMetric[]): string {
+  return metrics.map(metric => `${metric.name} ${metric.value}`).join(' · ')
+}
+
 export function parseLiveServerEvent(payload: unknown): LiveServerEvent | null {
   const parsed = parsePayload(payload)
   if (!parsed || typeof parsed.type !== 'string') return null
@@ -190,6 +255,10 @@ export function parseLiveServerEvent(payload: unknown): LiveServerEvent | null {
       return parseTurnDoneEvent(parsed)
     case 'delegation.created':
       return parseDelegationCreatedEvent(parsed)
+    case 'session.usage.updated':
+      return { type: 'session.usage.updated', metrics: parseUsageMetrics(parsed) }
+    case 'rate_limits.updated':
+      return { type: 'rate_limits.updated', metrics: parseUsageMetrics(parsed) }
     case 'error':
       return parseErrorEvent(parsed)
     default:

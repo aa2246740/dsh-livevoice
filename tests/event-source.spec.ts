@@ -20,7 +20,11 @@ describe('call event subscription termination', () => {
     const source = FixtureEventSource.latest
     source.readyState = FixtureEventSource.CLOSED
     source.dispatchEvent(new Event('error'))
-    expect(event).toHaveBeenCalledWith({ type: 'error', message: expect.any(String) })
+    expect(event).toHaveBeenCalledWith({
+      type: 'error',
+      message: expect.any(String),
+      kind: 'network',
+    })
     expect(source.close).toHaveBeenCalledOnce()
     unsubscribe()
   })
@@ -39,6 +43,21 @@ describe('call event subscription termination', () => {
     const unsubscribe = subscribeLiveEvents('active-token', event)
     FixtureEventSource.latest.dispatchEvent(new MessageEvent('error', { data: JSON.stringify({ type: 'error', message: 'fixture provider failed' }) }))
     expect(event).toHaveBeenCalledWith({ type: 'error', message: 'fixture provider failed' })
+    unsubscribe()
+  })
+
+  it('delivers usage frames without turning them into remaining minutes', () => {
+    const event = vi.fn()
+    const unsubscribe = subscribeLiveEvents('active-token', event)
+    const usage = {
+      type: 'usage',
+      source: 'session.usage.updated',
+      metrics: [{ name: 'input_tokens', value: 12 }],
+    }
+    FixtureEventSource.latest.dispatchEvent(new MessageEvent('usage', {
+      data: JSON.stringify(usage),
+    }))
+    expect(event).toHaveBeenCalledWith(usage)
     unsubscribe()
   })
 

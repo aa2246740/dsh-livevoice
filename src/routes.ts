@@ -1,8 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { CodexAuthError, describeCodexAuth } from './auth.js'
+import { describeCodexAuth } from './auth.js'
 import type { LiveCallHandle, LiveCallRegistry } from './controller.js'
-import { errorMessage, json, readJson, trustedRequest, writeSse } from './http.js'
+import { liveFailureBody, liveFailureFromUnknown } from './failure.js'
+import { json, readJson, trustedRequest, writeSse } from './http.js'
 import type { LiveProxy } from './proxy.js'
 import { warmupLiveSignaling } from './signaling.js'
 import {
@@ -32,7 +33,9 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
         json(res, 200, {
           ready: auth.ready,
           source: auth.source,
+          expired: auth.expired,
           ...auth.expiresAt === undefined ? {} : { expiresAt: auth.expiresAt },
+          ...auth.accountHint === undefined ? {} : { accountHint: auth.accountHint },
           voices: LIVE_VOICE_OPTIONS,
           defaultVoice: DEFAULT_LIVE_VOICE,
         })
@@ -95,10 +98,9 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
           })
         } catch (error) {
           if (requesterGone) return
-          const message = errorMessage(error)
-          console.error(`[dsh-livevoice] call failed: ${message}`)
-          const status = error instanceof CodexAuthError ? 401 : 502
-          json(res, status, { error: message })
+          const failure = liveFailureFromUnknown(error)
+          console.error(`[dsh-livevoice] call failed (${failure.kind}): ${failure.message}`)
+          json(res, failure.status, liveFailureBody(failure))
         }
       },
     }), 'dsh-livevoice calls')

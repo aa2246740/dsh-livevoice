@@ -1,6 +1,9 @@
 import { DEFAULT_LIVE_VOICE, type LiveVoice, resolveLiveVoice } from '../voices.js'
+import { isLiveFailureKind, type LiveFailureKind } from '../kinds.js'
+import type { LiveUsageMetric, LiveUsageSource } from '../protocol.js'
 import {
   fetchLiveStatus,
+  LiveCallError,
   startLiveCall,
   stopLiveCall,
   subscribeLiveEvents,
@@ -38,11 +41,16 @@ export interface LiveClientState {
   phase: LivePhase | 'idle'
   stage?: string
   dialStartedAt?: number
+  connectedAt?: number
   muted: boolean
   inputLevel: number
   outputLevel: number
   transcript?: { role: 'user' | 'assistant'; text: string; final: boolean }
   error?: string
+  errorKind?: LiveFailureKind
+  mediaWarning?: string
+  usageSource?: LiveUsageSource
+  usageMetrics?: readonly LiveUsageMetric[]
   voice: LiveVoice
   status?: LiveStatus
   capture?: string
@@ -181,9 +189,12 @@ export class LiveClientSession {
       }
       if (gen !== this.startGen) return
       if (this.state.status?.ready !== true) {
-        throw new Error(this.state.status
-          ? 'No Codex OAuth credential is available. Sign in to ChatGPT Codex first.'
-          : 'Live voice status is unavailable.')
+        throw new LiveCallError(
+          this.state.status
+            ? 'No Codex OAuth credential is available. Sign in to ChatGPT Codex first.'
+            : 'Live voice status is unavailable.',
+          'auth',
+        )
       }
       this.patch({ stage: 'dial.offer' })
       const created = await createLivePeer({
@@ -195,9 +206,25 @@ export class LiveClientSession {
           this.remoteStream = stream
           playback.attach(stream)
         },
-        onIceState: () => {
-          if (gen === this.startGen && this.state.phase === 'connecting') {
+        onIceState: (iceState) => {
+          if (gen !== this.startGen) return
+          if (this.state.phase === 'connecting' || this.starting) {
             this.patch({ stage: 'dial.media' })
+            return
+          }
+          if (iceState === 'connected' || iceState === 'completed') {
+            if (this.state.mediaWarning) this.patch({ mediaWarning: undefined })
+            return
+          }
+          if (iceState === 'disconnected') {
+            this.patch({ mediaWarning: 'media.warning' })
+            return
+          }
+          if (iceState === 'failed' || iceState === 'closed') {
+            void this.stop(
+              'Live voice media dropped after the call was up. This is the browser audio path to OpenAI, not a Codex quota error.',
+              'media',
+            )
           }
         },
         onControlPayload: payload => {
@@ -258,17 +285,21 @@ export class LiveClientSession {
           : pendingPhase && pendingPhase !== 'connecting' ? pendingPhase : 'listening',
         stage: undefined,
         dialStartedAt: undefined,
+        connectedAt: Date.now(),
       })
     } catch (error) {
       if (gen !== this.startGen || this.state.phase === 'idle') return
-      await this.stop(error instanceof Error ? error.message : String(error))
+      await this.stop(
+        error instanceof Error ? error.message : String(error),
+        liveFailureKind(error),
+      )
     } finally {
       if (this.startAbort === abort) this.startAbort = undefined
       if (gen === this.startGen) this.starting = false
     }
   }
 
-  async stop(error?: string): Promise<void> {
+  async stop(error?: string, kind?: LiveFailureKind): Promise<void> {
     this.startGen += 1
     this.starting = false
     this.startAbort?.abort()
@@ -291,12 +322,18 @@ export class LiveClientSession {
       phase: 'idle',
       stage: undefined,
       dialStartedAt: undefined,
+      connectedAt: undefined,
       muted: false,
       inputLevel: 0,
       outputLevel: 0,
       capture: undefined,
+      mediaWarning: undefined,
+      usageSource: undefined,
+      usageMetrics: undefined,
       receipts: stopTrackingLiveTaskReceipts(this.state.receipts),
-      ...error === undefined ? { error: this.state.error } : { error },
+      ...error === undefined
+        ? { error: this.state.error, errorKind: this.state.errorKind }
+        : { error, errorKind: kind },
     })
     if (callToken) {
       try {
@@ -347,8 +384,12 @@ export class LiveClientSession {
       this.patch({ receipts: mergeLiveTaskReceipt(this.state.receipts, event.receipt) })
       return
     }
+    if (event.type === 'usage') {
+      this.patch({ usageSource: event.source, usageMetrics: event.metrics })
+      return
+    }
     if (event.type === 'error') {
-      void this.stop(event.message)
+      void this.stop(event.message, event.kind)
       return
     }
     if (event.type === 'closed') {
@@ -395,6 +436,12 @@ export class LiveClientSession {
     this.state = { ...this.state, ...patch }
     for (const listener of this.listeners) listener(this.state)
   }
+}
+
+function liveFailureKind(error: unknown): LiveFailureKind {
+  if (typeof error !== 'object' || error === null || !('kind' in error)) return 'unknown'
+  const kind = error.kind
+  return typeof kind === 'string' && isLiveFailureKind(kind) ? kind : 'unknown'
 }
 
 function loadVoice(): LiveVoice {

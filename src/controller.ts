@@ -8,6 +8,7 @@ import { briefLiveDelegation, renderWorkerHandoff, type TranscriptLine } from '.
 import { PLUGIN_ID } from './ids.js'
 import { livePhaseForSpeech, liveWorkRoute, openTurnNumber } from './work.js'
 import type { LiveProxy } from './proxy.js'
+import { type LiveUiEvent } from './events.js'
 import {
   buildDelegationContextAppend,
   chunkLiveContext,
@@ -15,6 +16,8 @@ import {
   type LiveContextChannel,
   type LivePhase,
   type LiveServerEvent,
+  type LiveUsageMetric,
+  type LiveUsageSource,
 } from './protocol.js'
 import {
   emptyTranscriptState,
@@ -31,13 +34,7 @@ import { hasToolCalls, textFromBlocks } from './text.js'
 import { resolveLiveVoice } from './voices.js'
 import { LiveTaskReceiptLog, type LiveTaskReceipt } from './receipts.js'
 
-export type LiveUiEvent =
-  | { type: 'ready' }
-  | { type: 'phase'; phase: LivePhase }
-  | { type: 'transcript'; transcript: LiveTranscript | undefined }
-  | { type: 'task-receipt'; receipt: LiveTaskReceipt }
-  | { type: 'error'; message: string }
-  | { type: 'closed' }
+export type { LiveUiEvent }
 
 export interface LiveCallHandle {
   readonly callToken: string
@@ -182,6 +179,7 @@ class LiveCallSession {
   private readonly delegations = new LiveDelegations()
   private transcripts: TranscriptState = emptyTranscriptState()
   private lastTranscript: LiveTranscript | undefined
+  private lastUsage: { source: LiveUsageSource; metrics: readonly LiveUsageMetric[] } | undefined
   private spoken: TranscriptLine[] = []
   private readonly receiptLog = new LiveTaskReceiptLog()
   private readonly seenDelegationIds = new Set<string>()
@@ -253,6 +251,7 @@ class LiveCallSession {
     if (this.ready) listener({ type: 'ready' })
     listener({ type: 'phase', phase: this.phase })
     if (this.lastTranscript) listener({ type: 'transcript', transcript: this.lastTranscript })
+    if (this.lastUsage) listener({ type: 'usage', source: this.lastUsage.source, metrics: this.lastUsage.metrics })
     for (const receipt of this.receiptLog.snapshot()) {
       listener({ type: 'task-receipt', receipt })
     }
@@ -299,16 +298,24 @@ class LiveCallSession {
         this.mark('delegation')
         this.handleDelegation(event)
         break
+      case 'session.usage.updated':
+      case 'rate_limits.updated':
+        this.lastUsage = { source: event.type, metrics: event.metrics }
+        this.emit({ type: 'usage', source: event.type, metrics: event.metrics })
+        break
+      case 'output_audio.delta':
+        break
       case 'error':
         this.fail(event.message)
         break
       case 'unknown':
-        if (event.wireType !== 'session.usage.updated') {
-          console.log(`[dsh-livevoice] unknown live event ${event.wireType}`)
-        }
+        console.log(`[dsh-livevoice] unknown live event ${event.wireType}`)
         break
-      default:
+      default: {
+        const _exhaustive: never = event
+        void _exhaustive
         break
+      }
     }
   }
 

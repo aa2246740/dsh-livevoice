@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { formatLiveUsageMetrics } from '../protocol.js'
+import type { LiveTaskReceipt, LiveTaskStatus } from '../receipts.js'
 import { formatConnectingSubtitle } from './dial.js'
 import { isLiveVoiceKey, type LiveVoiceKey } from './locales.js'
 import { meterHeights } from './levels.js'
 import { type LiveClientSession, type LiveClientState } from './session.js'
-import type { LiveTaskReceipt, LiveTaskStatus } from '../receipts.js'
 import css from './LivePanel.module.css'
 
 export type LiveChipProps = PropsRuntime<'conversation.input.left'>
@@ -52,10 +53,10 @@ export function LiveDock(props: LiveDockProps) {
   const [, setTick] = useState(0)
   useEffect(() => live.subscribe(setState), [live])
   useEffect(() => {
-    if (state.phase !== 'connecting') return
+    if (state.phase !== 'connecting' && state.connectedAt === undefined) return
     const timer = window.setInterval(() => setTick(value => value + 1), 1000)
     return () => window.clearInterval(timer)
-  }, [state.phase, state.dialStartedAt])
+  }, [state.phase, state.dialStartedAt, state.connectedAt])
   const bars = useMemo(() => meterHeights(state.inputLevel), [state.inputLevel])
   const phaseKey = (`phase.${state.phase}` as LiveVoiceKey)
   const connecting = state.phase === 'connecting'
@@ -84,12 +85,15 @@ export function LiveDock(props: LiveDockProps) {
             <div className={css.copy}>
               <div className={css.phase}>{props.t(phaseKey)}</div>
               {state.error
-                ? <div className={css.error}>{state.error}</div>
+                ? <div className={css.error}>{errorLine(state, props.t)}</div>
                 : connecting
                   ? <div className={css.transcript}>{connectingSubtitle(state, props.t)}</div>
                   : state.transcript
                     ? <div className={css.transcript}>{state.transcript.text}</div>
                     : <div className={css.transcript}>{stageLabel(state.stage, props.t) ?? (state.capture ? `麦克风 ${state.capture}` : props.t('hint'))}</div>}
+              {callMeta(state, props.t)
+                ? <div className={css.meta}>{callMeta(state, props.t)}</div>
+                : null}
             </div>
             <div className={css.actions} onPointerDown={event => event.stopPropagation()}>
               {state.phase !== 'idle'
@@ -120,7 +124,7 @@ function TaskReceiptList(props: {
   return (
     <section className={css.taskPanel} data-live-task-list="" aria-label={props.t('task.list')}>
       <div className={css.taskHeader}>
-        <span>{props.t('task.list')}</span>
+        <span>{props.t('task.list')} · {props.t('task.count', { count: props.receipts.length })}</span>
         <span className={css.taskBoundary}>{props.t('task.boundary')}</span>
       </div>
       <div className={css.taskScroll}>
@@ -184,6 +188,34 @@ function LiveGlyph(props: { active: boolean }) {
 function stageLabel(stage: string | undefined, t: LiveDockProps['t']): string | undefined {
   if (stage === undefined) return undefined
   return isLiveVoiceKey(stage) ? t(stage) : stage
+}
+
+function errorLine(state: LiveClientState, t: LiveDockProps['t']): string {
+  const message = state.error ?? ''
+  if (state.errorKind === undefined) return message
+  const key = `error.kind.${state.errorKind}`
+  return isLiveVoiceKey(key) ? `${t(key)}: ${message}` : message
+}
+
+function callMeta(state: LiveClientState, t: LiveDockProps['t']): string | undefined {
+  const parts: string[] = []
+  if (state.status && state.status.source !== 'none') {
+    const sourceKey = `source.${state.status.source}`
+    if (isLiveVoiceKey(sourceKey)) parts.push(t(sourceKey))
+  }
+  if (state.status?.accountHint) parts.push(t('status.account', { hint: state.status.accountHint }))
+  if (state.status?.expired) parts.push(t('status.expired'))
+  if (state.connectedAt !== undefined && state.phase !== 'idle') {
+    const seconds = Math.max(0, Math.floor((Date.now() - state.connectedAt) / 1000))
+    parts.push(t('status.duration', { seconds }))
+  }
+  if (state.usageMetrics !== undefined && state.usageMetrics.length > 0) {
+    parts.push(`${t('usage.label')}: ${formatLiveUsageMetrics(state.usageMetrics)}`)
+  }
+  if (state.mediaWarning !== undefined) {
+    parts.push(isLiveVoiceKey(state.mediaWarning) ? t(state.mediaWarning) : state.mediaWarning)
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined
 }
 
 function connectingSubtitle(state: LiveClientState, t: LiveDockProps['t']): string {

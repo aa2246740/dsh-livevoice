@@ -58,9 +58,15 @@ export async function createLivePeer(options: {
     ],
   })
   const peerConnection = pc
-  peerConnection.addEventListener('iceconnectionstatechange', () => {
+  const reportTransport = (): void => {
+    if (peerConnection.connectionState === 'failed') {
+      options.onIceState('failed')
+      return
+    }
     options.onIceState(peerConnection.iceConnectionState)
-  })
+  }
+  peerConnection.addEventListener('iceconnectionstatechange', reportTransport)
+  peerConnection.addEventListener('connectionstatechange', reportTransport)
   let delivered = false
   peerConnection.addEventListener('track', (event) => {
     if (event.track.kind !== 'audio' || delivered) return
