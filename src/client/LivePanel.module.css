@@ -182,6 +182,16 @@
   white-space: nowrap;
 }
 
+.meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .error {
   color: var(--dsw-alias-label-danger, #c0392b);
 }

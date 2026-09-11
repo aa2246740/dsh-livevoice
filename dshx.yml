@@ -3,3 +3,7 @@ entry: src/dsh-livevoice.ts
 marker: "[my-plugins/dsh-livevoice] loaded"
 kind: client
 profile: web
+hotReload:
+  artifacts:
+    - src/dsh-livevoice.ts
+    - lib/dsh-livevoice.js

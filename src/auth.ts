@@ -146,9 +146,54 @@ async function readCodexCliAuth(): Promise<CodexAccess | undefined> {
   }
 }
 
-function needsRefresh(access: CodexAccess, now = Date.now()): boolean {
+export function needsRefresh(access: CodexAccess, now = Date.now()): boolean {
   if (access.expiresAt === undefined) return false
   return now >= access.expiresAt - REFRESH_SOON_MS
+}
+
+export function isCodexAccessExpired(access: CodexAccess, now = Date.now()): boolean {
+  return access.expiresAt !== undefined && now >= access.expiresAt
+}
+
+export function accountHint(accountId: string | undefined): string | undefined {
+  if (accountId === undefined || accountId.length < 4) return undefined
+  return accountId.slice(-4)
+}
+
+export function selectStoredCodexAccess(
+  candidates: readonly CodexAccess[],
+  now = Date.now(),
+): CodexAccess | undefined {
+  return candidates.find(access => !isCodexAccessExpired(access, now)) ?? candidates[0]
+}
+
+export async function pickCodexAccess(
+  candidates: readonly CodexAccess[],
+  refresh: (access: CodexAccess) => Promise<CodexAccess>,
+  now = Date.now(),
+): Promise<CodexAccess> {
+  if (candidates.length === 0) {
+    throw new CodexAuthError(
+      'No Codex OAuth credential is available for a live call. Sign in to ChatGPT Codex in DSH Settings, use dsh-oauth-login, or run `codex login`.',
+    )
+  }
+  let lastError: unknown
+  for (const candidate of candidates) {
+    if (!needsRefresh(candidate, now)) return candidate
+    try {
+      const next = await refresh(candidate)
+      if (isCodexAccessExpired(next, now)) {
+        lastError = new CodexAuthError(`Codex OAuth from ${candidate.source} is expired.`)
+        continue
+      }
+      return next
+    } catch (error) {
+      lastError = error
+      if (!isCodexAccessExpired(candidate, now)) return candidate
+    }
+  }
+  if (lastError instanceof Error) throw lastError
+  throw new CodexAuthError('No usable Codex OAuth credential is available for a live call.')
 }
 
 export async function refreshCodexAccess(
@@ -195,6 +240,14 @@ async function persistAccess(ctx: Context, dshHome: string, access: CodexAccess)
   }
 }
 
+export type CodexAuthStatus = {
+  ready: boolean
+  source: CodexAuthSource | 'none'
+  expiresAt?: number
+  accountHint?: string
+  expired: boolean
+}
+
 export async function resolveCodexAccess(
   ctx: Context,
   proxy: LiveProxy,
@@ -206,20 +259,13 @@ export async function resolveCodexAccess(
     await readCodexCliAuth(),
   ].filter((value): value is CodexAccess => value !== undefined)
 
-  if (candidates.length === 0) {
-    throw new CodexAuthError(
-      'No Codex OAuth credential is available for a live call. Sign in to ChatGPT Codex in DSH Settings, use dsh-oauth-login, or run `codex login`.',
-    )
-  }
-
-  let access = candidates[0]!
-  if (needsRefresh(access)) {
-    try {
-      access = await refreshCodexAccess(access, proxy)
-      await persistAccess(ctx, dshHome, access)
-    } catch (error) {
-      if (candidates.length === 1) throw error
-    }
+  const access = await pickCodexAccess(
+    candidates,
+    current => refreshCodexAccess(current, proxy),
+  )
+  const original = candidates.find(item => item.source === access.source)
+  if (original !== undefined && original.accessToken !== access.accessToken) {
+    await persistAccess(ctx, dshHome, access)
   }
   return access
 }
@@ -227,14 +273,20 @@ export async function resolveCodexAccess(
 export async function describeCodexAuth(
   ctx: Context,
   dshHome = join(homedir(), '.dsh'),
-): Promise<{ ready: boolean; source: CodexAuthSource | 'none'; expiresAt?: number }> {
-  const stored = await readOAuthLoginStore(dshHome)
-    ?? await readLlmCredential(ctx)
-    ?? await readCodexCliAuth()
-  if (stored === undefined) return { ready: false, source: 'none' }
+): Promise<CodexAuthStatus> {
+  const candidates = [
+    await readOAuthLoginStore(dshHome),
+    await readLlmCredential(ctx),
+    await readCodexCliAuth(),
+  ].filter((value): value is CodexAccess => value !== undefined)
+  const stored = selectStoredCodexAccess(candidates)
+  if (stored === undefined) return { ready: false, source: 'none', expired: false }
+  const hint = accountHint(stored.accountId)
   return {
     ready: true,
     source: stored.source,
+    expired: isCodexAccessExpired(stored),
     ...stored.expiresAt === undefined ? {} : { expiresAt: stored.expiresAt },
+    ...hint === undefined ? {} : { accountHint: hint },
   }
 }
