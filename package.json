@@ -1,27 +1,53 @@
 {
   "name": "dsh-livevoice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Codex realtime live voice for DeepSeek Harness: WebRTC + Frameless Bidi + session delegation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aa2246740/dsh-livevoice.git"
+  },
+  "homepage": "https://github.com/aa2246740/dsh-livevoice#readme",
+  "bugs": {
+    "url": "https://github.com/aa2246740/dsh-livevoice/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "livevoice",
+    "webrtc"
+  ],
   "type": "module",
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "main": "lib/dsh-livevoice.js",
   "files": [
-    "lib",
+    "lib/*.js",
+    "lib/*.js.map",
+    "cordis.patch.yml",
     "README.md"
   ],
   "exports": {
     ".": {
       "types": "./lib/types/dsh-livevoice.d.ts",
-      "import": "./lib/dsh-livevoice.js"
+      "import": "./lib/dsh-livevoice.js",
+      "default": "./lib/dsh-livevoice.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "import": "./lib/client.js",
       "default": "./lib/client.js"
     },
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "entry": "./lib/client.js",
@@ -38,7 +64,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsdown",
+    "build": "tsc -p tsconfig.json && tsdown --config-loader native",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "check": "pnpm test && pnpm build"
@@ -92,6 +118,7 @@
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/ws": "^8.18.1",
+    "lightningcss": "^1.33.0",
     "react": "^18.2.0",
     "tsdown": "0.22.2",
     "typescript": "6.0.3",

@@ -1,16 +1,33 @@
 # dsh-livevoice
 
+```sh
+dsh plugin --profile web add github:aa2246740/dsh-livevoice
+```
+
+You need official `dsh` on PATH (or `npx @deepseek-ai/dsh`) and **pnpm**. `dsh plugin add` runs pnpm in `$DSH_HOME/profiles/web`. This repo commits built `lib/`, so a git install does not need `prepare` or a profile `allowBuilds` change.
+
+Then restart that Host and reload the page. `dsh plugin add` writes the profile. It does not hot-load a running process.
+
 Codex realtime voice (`Ctrl+L` / `/live`) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC media, Frameless Bidi sideband, client-side delegation into the current DSH session. It is not a local STT/TTS plugin.
 
-## Compatibility and build
+## Compatibility
 
-The current source targets DeepSeek Harness `dsh-v0.1.5-rc.2`. Build the browser half against the intended Harness checkout so dshx uses that target's public client platform table:
+The current source targets official DeepSeek Harness **0.1.5-rc.2** (`dsh-v0.1.5-rc.2`).
+
+## Other install paths
+
+Local checkout or tarball:
 
 ```sh
-pnpm install --frozen-lockfile
-DSHX_HARNESS=/absolute/path/to/deepseek-harness pnpm build
+git clone https://github.com/aa2246740/dsh-livevoice.git
+dsh plugin --profile web add ./dsh-livevoice
+dsh plugin --profile web add ./dsh-livevoice-0.1.1.tgz
+```
+
+```sh
+dsh plugin --profile web remove dsh-livevoice
 ```
 
 ## Auth: OAuth is required
@@ -62,3 +79,13 @@ The server replays current-call receipts when the SSE connection reconnects and 
 Voice names match Codex: arbor, breeze, cove, ember, juniper, maple, sol, spruce, vale.
 
 HTTP/WS outbound honors `$DSH_HOME/.dsh-oauth-proxy.json` (same file as dsh-oauth-login) and `HTTPS_PROXY`. Browser audio uses WebRTC from the current device to OpenAI; being on this machine or the same LAN only means the control plane goes through DSH.
+
+## Rebuild committed lib/
+
+Stock install uses the committed `lib/`. After TypeScript edits, rebuild with **pnpm**:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm test
+pnpm build
+```
