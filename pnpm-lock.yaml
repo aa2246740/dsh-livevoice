@@ -90,6 +90,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      lightningcss:
+        specifier: ^1.33.0
+        version: 1.33.0
       react:
         specifier: ^18.2.0
         version: 18.3.1
