@@ -39,25 +39,29 @@ describe('stock dsh plugin add', () => {
     expect(client).not.toMatch(/\/home\/|\/Users\/|\/agent\//)
   })
 
-  it('accepts Harness 0.1.5-rc.3 and stays on the 0.1.5 line', () => {
+  it('accepts Harness 0.1.7-rc.1 and rejects the 0.1.7 alphas', () => {
     const peers = (pkg as { peerDependencies?: Record<string, string> }).peerDependencies ?? {}
     const dev = (pkg as { devDependencies?: Record<string, string> }).devDependencies ?? {}
     const peerNames = Object.keys(peers).filter(name => name.startsWith('@deepseek-ai/dsh-'))
     expect(peerNames.length).toBeGreaterThan(0)
     for (const name of peerNames) {
-      expect(peers[name]).toBe('>=0.1.5-rc.3 <0.1.6')
-      expect(semver.satisfies('0.1.5-rc.3', peers[name]!)).toBe(true)
+      expect(peers[name]).toBe('>=0.1.7-rc.1 <0.1.8')
+      expect(semver.satisfies('0.1.7-rc.1', peers[name]!)).toBe(true)
+      expect(semver.satisfies('0.1.5-rc.3', peers[name]!)).toBe(false)
       expect(semver.satisfies('0.1.2-rc.1', peers[name]!)).toBe(false)
       expect(semver.satisfies('0.1.7-alpha.2', peers[name]!)).toBe(false)
       expect(semver.satisfies('0.1.7-alpha.1', peers[name]!)).toBe(false)
+      expect(semver.satisfies('0.1.8-alpha.1', peers[name]!)).toBe(false)
     }
     const devNames = Object.keys(dev).filter(name => name.startsWith('@deepseek-ai/dsh-'))
-    for (const name of devNames) expect(dev[name]).toBe('0.1.5-rc.3')
+    for (const name of devNames) expect(dev[name]).toBe('0.1.7-rc.1')
     const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
-    expect(readme).toContain('0.1.5-rc.3')
-    expect(readme).toContain('@deepseek-ai/dsh@0.1.5-rc.3')
-    expect(readme).not.toContain('0.1.5-rc.2')
-    expect(readme).not.toContain('0.1.7-alpha')
+    expect(readme).toContain('0.1.7-rc.1')
+    expect(readme).toContain('@deepseek-ai/dsh@0.1.7-rc.1')
+    expect(readme).toContain('dsh-v0.1.7-rc.1')
+    expect(readme).not.toContain('0.1.5-rc.3')
+    expect(readme).not.toContain('0.1.7-alpha.1')
+    expect(readme).not.toContain('0.1.7-alpha.2')
   })
 
   it('leads the README with the official github: add and names pnpm', () => {

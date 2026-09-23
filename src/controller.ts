@@ -1,5 +1,13 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+
+declare module '@deepseek-ai/dsh-llm/message' {
+  interface MessageSourceMap {
+    'dsh-livevoice': {
+      kind: 'dsh-livevoice'
+    }
+  }
+}
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { CodexAccess } from './auth.js'
 import { presentFinalTranscript } from './conversation.js'
@@ -337,7 +345,7 @@ class LiveCallSession {
     if (handoff === undefined) return
     const message = createUserMessage({
       content: [{ type: 'text', text: handoff }],
-      source: { kind: 'plugin', plugin: PLUGIN_ID },
+      source: { kind: PLUGIN_ID },
     })
     const route = liveWorkRoute(this.agent.status) === 'steer'
       && openTurnNumber(this.agent.session.snapshotEvents()) !== undefined
