@@ -95,7 +95,7 @@ Do not reimplement signaling. The Host already:
 
 - talks to Live (`gpt-live-1-codex`)
 - injects a **brief** via `createUserMessage` + `agent.steer` (open turn) or `agent.followup` (idle)
-- source `{ kind: 'plugin', plugin: 'dsh-livevoice' }`
+- source `{ kind: 'dsh-livevoice' }`
 
 Worker text is `briefLiveDelegation` then the Codex envelope. Casual hear stays a `livevoice-hear` command, not `user/message`.
 
