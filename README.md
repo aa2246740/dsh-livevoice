@@ -1,12 +1,24 @@
 # dsh-livevoice
 
-```sh
-dsh plugin --profile web add github:aa2246740/dsh-livevoice
+## Install
+
+### DSH Studio desktop app (recommended)
+
+Open **Settings → Plugins → Add plugin** and enter this in “Package name or address”:
+
+```text
+github:aa2246740/dsh-livevoice#v0.1.4
 ```
 
-You need official `dsh` on PATH (or `npx @deepseek-ai/dsh`) and **pnpm**. `dsh plugin add` runs pnpm in `$DSH_HOME/profiles/web`. This repo commits built `lib/`, so a git install does not need `prepare` or a profile `allowBuilds` change.
+The desktop plugin manager owns the Desktop profile and bundled package manager. This release includes built `lib/`; normal use needs no clone, build, or DSHX installation. Follow the app if it asks you to reload or reopen after installation.
 
-Then restart that Host and reload the page. `dsh plugin add` writes the profile. It does not hot-load a running process.
+### Web CLI
+
+```sh
+dsh plugin --profile web add github:aa2246740/dsh-livevoice#v0.1.4
+```
+
+This official CLI command writes only the `web` profile; it cannot modify the Desktop App profile. For an already-running Web Host, reopen that Host once and reload the page because bundles are read at boot.
 
 Codex realtime voice (`Ctrl+L` / `/live`) for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
@@ -16,14 +28,14 @@ This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC
 
 The current source targets official DeepSeek Harness **0.1.7-rc.2** (`dsh-v0.1.7-rc.2`, SHA `477b4f420553e8a52c2fbccc464d7561b239c443`, npm `@deepseek-ai/dsh@0.1.7-rc.2`). Harness peers stay `>=0.1.7-rc.1 <0.1.8`. That range accepts `0.1.7-rc.1` and `0.1.7-rc.2`, and rejects `0.1.7-alpha` releases.
 
-## Other install paths
+## Other install paths (development/local testing)
 
 Local checkout or tarball:
 
 ```sh
 git clone https://github.com/aa2246740/dsh-livevoice.git
 dsh plugin --profile web add ./dsh-livevoice
-dsh plugin --profile web add ./dsh-livevoice-0.1.3.tgz
+dsh plugin --profile web add ./dsh-livevoice-0.1.4.tgz
 ```
 
 ```sh
