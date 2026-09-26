@@ -442,3 +442,8 @@
   line-height: 24px;
   white-space: pre-wrap;
 }
+
+.recovery { margin-top: 6px; }
+.recovery .actions { flex-wrap: wrap; margin-top: 6px; }
+.recovery .meta { white-space: normal; }
+.action:disabled { cursor: default; opacity: .55; }

@@ -7,11 +7,13 @@ import { json, readJson, trustedRequest, writeSse } from './http.js'
 import type { LiveProxy } from './proxy.js'
 import { warmupLiveSignaling } from './signaling.js'
 import {
+  LIVE_MICROPHONE_SETTINGS_PATH,
   LIVE_CALLS_PATH,
   LIVE_EVENTS_PATH,
   LIVE_STATUS_PATH,
   LIVE_STOP_PATH,
 } from './ids.js'
+import { describeHostMicrophone, openMicrophoneSettings } from './microphone-host.js'
 import { DEFAULT_LIVE_VOICE, LIVE_VOICE_OPTIONS } from './voices.js'
 
 function stringField(value: unknown, key: string): string | undefined {
@@ -31,6 +33,7 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
         warmupLiveSignaling(proxy)
         const auth = await describeCodexAuth(webCtx)
         json(res, 200, {
+          microphone: await describeHostMicrophone(),
           ready: auth.ready,
           source: auth.source,
           expired: auth.expired,
@@ -41,6 +44,19 @@ export function registerLiveVoiceRoutes(ctx: Context, registry: LiveCallRegistry
         })
       },
     }), 'dsh-livevoice status')
+
+    webCtx.effect(() => webCtx.webServer.register({
+      kind: 'exact',
+      path: LIVE_MICROPHONE_SETTINGS_PATH,
+      handler: async (req, res) => {
+        if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+        if (!trustedRequest(req) || req.headers['x-dsh-livevoice-action'] !== 'microphone-settings') {
+          return json(res, 403, { error: 'forbidden' })
+        }
+        try { await openMicrophoneSettings(); json(res, 200, { opened: true }) }
+        catch { json(res, 503, { error: '无法打开系统设置，请手动打开「隐私与安全性 → 麦克风」。' }) }
+      },
+    }), 'dsh-livevoice microphone settings')
 
     webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact',

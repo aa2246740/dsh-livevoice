@@ -1,3 +1,4 @@
+import { MicrophoneRecovery } from './MicrophoneRecovery.js'
 import { useEffect, useMemo, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -91,6 +92,7 @@ export function LiveDock(props: LiveDockProps) {
                   : state.transcript
                     ? <div className={css.transcript}>{state.transcript.text}</div>
                     : <div className={css.transcript}>{stageLabel(state.stage, props.t) ?? (state.capture ? `麦克风 ${state.capture}` : props.t('hint'))}</div>}
+              {state.microphoneBlocked ? <MicrophoneRecovery hostIssue={state.status?.microphone} /> : null}
               {callMeta(state, props.t)
                 ? <div className={css.meta}>{callMeta(state, props.t)}</div>
                 : null}

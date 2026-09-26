@@ -7,7 +7,7 @@ import { transform } from 'lightningcss'
 const manifest = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const id = manifest.name
 
-// dsh-v0.1.7-rc.1 packages/client/web/src/platform.ts (same list as 0.1.5-rc.3)
+// dsh-v0.1.7-rc.2 packages/client/web/src/platform.ts (same list as 0.1.7-rc.1)
 const PLATFORM_MODULES = [
   'react',
   'react/jsx-runtime',

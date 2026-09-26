@@ -12,6 +12,7 @@ import type { LiveVoice } from '../voices.js'
 export type { LiveUiEvent }
 
 export interface LiveStatus {
+  microphone?: 'missing-audio-entitlement' | 'unknown'
   ready: boolean
   source: 'dsh-oauth-login' | 'dsh-llm' | 'codex-cli' | 'none'
   expiresAt?: number

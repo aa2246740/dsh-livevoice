@@ -14,7 +14,7 @@ This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC
 
 ## Compatibility
 
-The current source targets official DeepSeek Harness **0.1.7-rc.1** (`dsh-v0.1.7-rc.1`, npm `@deepseek-ai/dsh@0.1.7-rc.1`). Harness peers are `>=0.1.7-rc.1 <0.1.8`. That range accepts `0.1.7-rc.1` and rejects `0.1.7-alpha` releases.
+The current source targets official DeepSeek Harness **0.1.7-rc.2** (`dsh-v0.1.7-rc.2`, SHA `477b4f420553e8a52c2fbccc464d7561b239c443`, npm `@deepseek-ai/dsh@0.1.7-rc.2`). Harness peers stay `>=0.1.7-rc.1 <0.1.8`. That range accepts `0.1.7-rc.1` and `0.1.7-rc.2`, and rejects `0.1.7-alpha` releases.
 
 ## Other install paths
 
@@ -23,7 +23,7 @@ Local checkout or tarball:
 ```sh
 git clone https://github.com/aa2246740/dsh-livevoice.git
 dsh plugin --profile web add ./dsh-livevoice
-dsh plugin --profile web add ./dsh-livevoice-0.1.2.tgz
+dsh plugin --profile web add ./dsh-livevoice-0.1.3.tgz
 ```
 
 ```sh
@@ -89,3 +89,7 @@ pnpm install --frozen-lockfile
 pnpm test
 pnpm build
 ```
+
+### macOS 麦克风恢复（0.1.4）
+
+实时语音需要客户端签名包含 `com.apple.security.device.audio-input`。缺少该声明时，macOS 不会弹出授权窗口；插件会给出准确提示。权限被拒绝时，可直接打开麦克风设置，并执行不连接模型的麦克风检测。支持官方客户端和 DSH Studio 自用客户端。

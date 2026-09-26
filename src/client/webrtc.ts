@@ -1,3 +1,4 @@
+import { MicrophoneAccessError } from './microphone-error.js'
 import { LIVE_EVENTS_CHANNEL } from '../protocol.js'
 import { prepareRemoteSdp } from '../sdp.js'
 
@@ -133,7 +134,7 @@ export async function acceptLiveAnswer(peer: LivePeer, answer: string): Promise<
   await Promise.all([waitForIceConnected(peer.pc), waitForEventsChannel(peer.eventsChannel)])
 }
 
-async function captureMicrophone(signal?: AbortSignal): Promise<MediaStream> {
+export async function captureMicrophone(signal?: AbortSignal): Promise<MediaStream> {
   return new Promise((resolve, reject) => {
     let settled = false
     const finish = (result: { stream: MediaStream } | { error: Error }): void => {
@@ -168,7 +169,7 @@ async function captureMicrophone(signal?: AbortSignal): Promise<MediaStream> {
       .catch((error: unknown) => {
         const name = error instanceof DOMException ? error.name : ''
         if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-          finish({ error: new Error('系统或 DSH.app 拒绝了麦克风。状态栏没有橙色录音点时 Codex 听不到。请在系统设置 → 隐私与安全性 → 麦克风里打开 DSH，并重新打开 DSH.app。') })
+          finish({ error: new MicrophoneAccessError() })
           return
         }
         finish({ error: error instanceof Error ? error : new Error(String(error)) })

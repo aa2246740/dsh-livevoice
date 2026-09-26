@@ -1,3 +1,4 @@
+import { MicrophoneAccessError } from './microphone-error.js'
 import { DEFAULT_LIVE_VOICE, type LiveVoice, resolveLiveVoice } from '../voices.js'
 import { isLiveFailureKind, type LiveFailureKind } from '../kinds.js'
 import type { LiveUsageMetric, LiveUsageSource } from '../protocol.js'
@@ -46,6 +47,7 @@ export interface LiveClientState {
   inputLevel: number
   outputLevel: number
   transcript?: { role: 'user' | 'assistant'; text: string; final: boolean }
+  microphoneBlocked?: boolean
   error?: string
   errorKind?: LiveFailureKind
   mediaWarning?: string
@@ -178,6 +180,7 @@ export class LiveClientSession {
       stage: 'dial.mic',
       dialStartedAt: Date.now(),
       error: undefined,
+      microphoneBlocked: false,
       transcript: undefined,
       voice: loadVoice(),
     })
@@ -289,6 +292,7 @@ export class LiveClientSession {
       })
     } catch (error) {
       if (gen !== this.startGen || this.state.phase === 'idle') return
+      this.patch({ microphoneBlocked: error instanceof MicrophoneAccessError })
       await this.stop(
         error instanceof Error ? error.message : String(error),
         liveFailureKind(error),
