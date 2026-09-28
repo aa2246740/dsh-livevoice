@@ -26,7 +26,7 @@ This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC
 
 ## Compatibility
 
-The current source targets official DeepSeek Harness **0.1.7-rc.2** (`dsh-v0.1.7-rc.2`, SHA `477b4f420553e8a52c2fbccc464d7561b239c443`, npm `@deepseek-ai/dsh@0.1.7-rc.2`). Harness peers stay `>=0.1.7-rc.1 <0.1.8`. That range accepts `0.1.7-rc.1` and `0.1.7-rc.2`, and rejects `0.1.7-alpha` releases.
+The current source targets official DeepSeek Harness **0.2.0-rc.1** (`dsh-v0.2.0-rc.1`, SHA `4878cdabd87d4041bdaff61d04c966883b9fd07a`, npm `@deepseek-ai/dsh@0.2.0-rc.1`). Harness peers are `>=0.2.0-rc.1 <0.2.1`. That range accepts `0.2.0-rc.1` and stable `0.2.0`, rejects `0.2.0` alphas, and rejects `0.1.7-rc.2`.
 
 ## Other install paths (development/local testing)
 
