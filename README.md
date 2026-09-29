@@ -26,7 +26,7 @@ This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC
 
 ## Compatibility
 
-The current source targets official DeepSeek Harness **0.1.7-rc.2** (`dsh-v0.1.7-rc.2`, SHA `477b4f420553e8a52c2fbccc464d7561b239c443`, npm `@deepseek-ai/dsh@0.1.7-rc.2`). Harness peers stay `>=0.1.7-rc.1 <0.1.8`. That range accepts `0.1.7-rc.1` and `0.1.7-rc.2`, and rejects `0.1.7-alpha` releases.
+The current source targets official DeepSeek Harness **0.2.0-rc.2** (`dsh-v0.2.0-rc.2`, SHA `639ed015397290b3745d163aafe02ffee4aa3f84`, npm `@deepseek-ai/dsh@0.2.0-rc.2`). Harness peers are `>=0.2.0-rc.1 <0.2.1`. That range accepts `0.2.0-rc.2` and stable `0.2.0`, rejects `0.2.0` alphas, and rejects `0.1.7-rc.2`.
 
 ## Other install paths (development/local testing)
 
@@ -105,3 +105,7 @@ pnpm build
 ### macOS 麦克风恢复（0.1.4）
 
 实时语音需要客户端签名包含 `com.apple.security.device.audio-input`。缺少该声明时，macOS 不会弹出授权窗口；插件会给出准确提示。权限被拒绝时，可直接打开麦克风设置，并执行不连接模型的麦克风检测。支持官方客户端和 DSH Studio 自用客户端。
+
+### 本地麦克风检测
+
+在通用设置中点击“检测麦克风（不连接模型）”。检测只申请本机采集并立即释放音轨，不连接语音模型、不上传录音。官方 DSH 0.2.0-rc.1 及 RC2 的 macOS 壳已包含 audio-input entitlement。

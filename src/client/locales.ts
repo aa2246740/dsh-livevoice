@@ -1,4 +1,9 @@
 export const en = {
+  'settings.microphone.title': 'Microphone permission',
+  'settings.microphone.hint': 'Check capture locally. No model connection or audio upload; capture stops after the check.',
+  'settings.microphone.check': 'Check microphone locally',
+  'settings.microphone.checking': 'Waiting for microphone…',
+  'settings.microphone.ready': 'Microphone is available. Capture has stopped.',
   'chip': 'Live',
   'chip.aria': 'Start Codex live voice',
   'chip.ariaActive': 'End Codex live voice',
@@ -77,6 +82,11 @@ export const en = {
 export type LiveVoiceKey = keyof typeof en
 
 export const zh = {
+  'settings.microphone.title': '麦克风权限',
+  'settings.microphone.hint': '仅在本机检查采集，检测后立即停止，不连接模型或上传音频。',
+  'settings.microphone.check': '检测麦克风（不连接模型）',
+  'settings.microphone.checking': '等待麦克风授权…',
+  'settings.microphone.ready': '麦克风可用，采集已停止。',
   'chip': '语音',
   'chip.aria': '开始 Codex 实时语音',
   'chip.ariaActive': '结束 Codex 实时语音',
