@@ -39,14 +39,14 @@ describe('stock dsh plugin add', () => {
     expect(client).not.toMatch(/\/home\/|\/Users\/|\/agent\//)
   })
 
-  it('accepts Harness 0.2.0-rc.1 and stable 0.2.0, and rejects alphas and 0.1.7-rc.2', () => {
+  it('accepts Harness 0.2.0-rc.2 and stable 0.2.0, and rejects alphas and 0.1.7-rc.2', () => {
     const peers = (pkg as { peerDependencies?: Record<string, string> }).peerDependencies ?? {}
     const dev = (pkg as { devDependencies?: Record<string, string> }).devDependencies ?? {}
     const peerNames = Object.keys(peers).filter(name => name.startsWith('@deepseek-ai/dsh-'))
     expect(peerNames.length).toBeGreaterThan(0)
     for (const name of peerNames) {
       expect(peers[name]).toBe('>=0.2.0-rc.1 <0.2.1')
-      expect(semver.satisfies('0.2.0-rc.1', peers[name]!)).toBe(true)
+      expect(semver.satisfies('0.2.0-rc.2', peers[name]!)).toBe(true)
       expect(semver.satisfies('0.2.0', peers[name]!)).toBe(true)
       expect(semver.satisfies('0.2.0-alpha.1', peers[name]!)).toBe(false)
       expect(semver.satisfies('0.2.0-alpha.2', peers[name]!)).toBe(false)
@@ -57,13 +57,13 @@ describe('stock dsh plugin add', () => {
       expect(semver.satisfies('0.2.1', peers[name]!)).toBe(false)
     }
     const devNames = Object.keys(dev).filter(name => name.startsWith('@deepseek-ai/dsh-'))
-    for (const name of devNames) expect(dev[name]).toBe('0.2.0-rc.1')
+    for (const name of devNames) expect(dev[name]).toBe('0.2.0-rc.2')
     const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
-    expect(readme).toContain('0.2.0-rc.1')
+    expect(readme).toContain('0.2.0-rc.2')
     expect(readme).toContain('stable `0.2.0`')
-    expect(readme).toContain('@deepseek-ai/dsh@0.2.0-rc.1')
-    expect(readme).toContain('dsh-v0.2.0-rc.1')
-    expect(readme).toContain('4878cdabd87d4041bdaff61d04c966883b9fd07a')
+    expect(readme).toContain('@deepseek-ai/dsh@0.2.0-rc.2')
+    expect(readme).toContain('dsh-v0.2.0-rc.2')
+    expect(readme).toContain('639ed015397290b3745d163aafe02ffee4aa3f84')
     expect(readme).toContain('0.1.7-rc.2')
     expect(readme).not.toContain('477b4f420553e8a52c2fbccc464d7561b239c443')
     expect(readme).not.toContain('0.2.0-alpha.1')
