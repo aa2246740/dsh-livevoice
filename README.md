@@ -2,12 +2,12 @@
 
 ## Install
 
-### DSH Studio desktop app (recommended)
+### Official DeepSeek Harness desktop app
 
 Open **Settings → Plugins → Add plugin** and enter this in “Package name or address”:
 
 ```text
-github:aa2246740/dsh-livevoice#v0.1.4
+dsh-livevoice@0.1.6
 ```
 
 The desktop plugin manager owns the Desktop profile and bundled package manager. This release includes built `lib/`; normal use needs no clone, build, or DSHX installation. Follow the app if it asks you to reload or reopen after installation.
@@ -15,7 +15,7 @@ The desktop plugin manager owns the Desktop profile and bundled package manager.
 ### Web CLI
 
 ```sh
-dsh plugin --profile web add github:aa2246740/dsh-livevoice#v0.1.4
+dsh plugin --profile web add dsh-livevoice@0.1.6
 ```
 
 This official CLI command writes only the `web` profile; it cannot modify the Desktop App profile. For an already-running Web Host, reopen that Host once and reload the page because bundles are read at boot.
@@ -35,7 +35,7 @@ Local checkout or tarball:
 ```sh
 git clone https://github.com/aa2246740/dsh-livevoice.git
 dsh plugin --profile web add ./dsh-livevoice
-dsh plugin --profile web add ./dsh-livevoice-0.1.4.tgz
+dsh plugin --profile web add ./dsh-livevoice-0.1.6.tgz
 ```
 
 ```sh

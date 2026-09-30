@@ -1,7 +1,10 @@
 {
   "name": "dsh-livevoice",
-  "version": "0.1.5",
-  "private": true,
+  "version": "0.1.6",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "description": "Codex realtime live voice for DeepSeek Harness: WebRTC + Frameless Bidi + session delegation.",
   "repository": {
     "type": "git",
@@ -27,6 +30,7 @@
   "files": [
     "lib/*.js",
     "lib/*.js.map",
+    "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "README.md"
   ],
