@@ -7,7 +7,7 @@
 Open **Settings → Plugins → Add plugin** and enter this in “Package name or address”:
 
 ```text
-dsh-livevoice@0.1.6
+dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.6
 ```
 
 The desktop plugin manager owns the Desktop profile and bundled package manager. This release includes built `lib/`; normal use needs no clone, build, or DSHX installation. Follow the app if it asks you to reload or reopen after installation.
@@ -15,7 +15,7 @@ The desktop plugin manager owns the Desktop profile and bundled package manager.
 ### Web CLI
 
 ```sh
-dsh plugin --profile web add dsh-livevoice@0.1.6
+dsh plugin --profile web add dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.6
 ```
 
 This official CLI command writes only the `web` profile; it cannot modify the Desktop App profile. For an already-running Web Host, reopen that Host once and reload the page because bundles are read at boot.
