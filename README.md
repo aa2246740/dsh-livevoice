@@ -7,7 +7,7 @@
 Open **Settings → Plugins → Add plugin** and enter this in “Package name or address”:
 
 ```text
-dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.6
+dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.7
 ```
 
 The desktop plugin manager owns the Desktop profile and bundled package manager. This release includes built `lib/`; normal use needs no clone, build, or DSHX installation. Follow the app if it asks you to reload or reopen after installation.
@@ -15,7 +15,7 @@ The desktop plugin manager owns the Desktop profile and bundled package manager.
 ### Web CLI
 
 ```sh
-dsh plugin --profile web add dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.6
+dsh plugin --profile web add dsh-livevoice@npm:@aa2246740/dsh-livevoice@0.1.7
 ```
 
 This official CLI command writes only the `web` profile; it cannot modify the Desktop App profile. For an already-running Web Host, reopen that Host once and reload the page because bundles are read at boot.
@@ -26,7 +26,7 @@ This is a protocol-complete port of omp’s GPT-Live path: ChatGPT OAuth, WebRTC
 
 ## Compatibility
 
-The current source targets official DeepSeek Harness **0.2.0-rc.2** (`dsh-v0.2.0-rc.2`, SHA `639ed015397290b3745d163aafe02ffee4aa3f84`, npm `@deepseek-ai/dsh@0.2.0-rc.2`). Harness peers are `>=0.2.0-rc.1 <0.2.1`. That range accepts `0.2.0-rc.2` and stable `0.2.0`, rejects `0.2.0` alphas, and rejects `0.1.7-rc.2`.
+The current source targets official DeepSeek Harness **0.2.1-rc.5** (`dsh-v0.2.1-rc.5`, SHA `b830ec950faba0a46dda564be3e2d854afed94f1`, npm `@deepseek-ai/dsh@0.2.1-rc.5`). Harness peers are `>=0.2.1-rc.1 <0.2.2`. That range accepts `0.2.1-rc.5`, rejects `0.2.1` alphas, and rejects the `0.2.0` series and `0.1.7-rc.2`.
 
 ## Other install paths (development/local testing)
 
@@ -35,7 +35,7 @@ Local checkout or tarball:
 ```sh
 git clone https://github.com/aa2246740/dsh-livevoice.git
 dsh plugin --profile web add ./dsh-livevoice
-dsh plugin --profile web add ./dsh-livevoice-0.1.6.tgz
+dsh plugin --profile web add ./dsh-livevoice-0.1.7.tgz
 ```
 
 ```sh
